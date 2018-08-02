@@ -1,0 +1,7 @@
+*~
+blib/
+Makefile
+MANIFEST
+MYMETA.*
+pm_to_blib
+pod2htmd.tmp
