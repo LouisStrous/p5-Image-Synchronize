@@ -15,9 +15,10 @@ WriteMakefile(
                           'XML::Twig' => 0,
                           'YAML::Any' => 0,
                          },
+    CONFIGURE_REQUIRES => {
+        'ExtUtils::MakeMaker' => '0',
+    },
     ABSTRACT_FROM     => 'lib/Image/Synchronize.pm', # retrieve abstract from module
     AUTHOR            => 'Louis Strous <LS@quae.nl>',
-    #LICENSE           => 'perl',
-    #Value must be from legacy list of licenses here
-    #http://search.cpan.org/perldoc?Module%3A%3ABuild%3A%3AAPI
+    LICENSE           => 'perl',
 );
