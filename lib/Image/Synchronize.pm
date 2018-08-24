@@ -1338,6 +1338,22 @@ sub fallback_camera_id {
   return '?' . basename_pattern($path);
 }
 
+#   @targets = $ims->find_info_targets($t);
+#
+# Returns the files that match C<$t>, which must be a
+# Synchronize::Timestamp or a Synchronize::Timerange.
+sub find_info_targets {
+  my ( $self, $t ) = @_;
+  my @targets;
+  foreach my $file ( keys %{ $self->{original_info} } ) {
+    my $create_date = $self->{original_info}->{$file}->get('CreateDate');
+    next unless defined $create_date;
+    push @targets, $file
+      if $t->contains_local($create_date);
+  }
+  return @targets;
+}
+
 #  $r = geo_distance([$latitude1, $longitude1, $altitude1],
 #                    [$latitude2, $longitude2, $altitude2]);
 #
