@@ -1,5 +1,7 @@
 package Image::Synchronize;
 
+# TODO: Prevent Thumbs.db files from being attempted to write to
+
 =head1 NAME
 
 Image::Synchronize - a module for synchronizing filesystem
@@ -77,7 +79,7 @@ use YAML::Any qw(
   LoadFile
 );
 
-our $VERSION = '1.0';
+our $VERSION = '1.1';
 
 my $CASE_TOLERANT;
 
