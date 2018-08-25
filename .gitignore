@@ -1,7 +1,11 @@
 *~
+*.bak
+*.tar.gz
 blib/
+html/
 Makefile
 MANIFEST
 MYMETA.*
 pm_to_blib
 pod2htmd.tmp
+imsync.exe

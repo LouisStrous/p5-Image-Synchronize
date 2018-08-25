@@ -1,0 +1,1208 @@
+=encoding utf-8
+
+=head1 NAAM
+
+  imsync - Synchroniseer bewerkingstijdstippen van foto- en filmbestanden
+
+=head1 GEBRUIKSVOORBEELDEN
+
+  # rapporteer maar pas niet aan
+  imsync
+  imsync --cameraid IMG_1234.JPG=MyCamera    # pas camera-ID aan
+  imsync --time IMG_1234.JPG=+10m6s          # pas cameratijdverschil aan
+  imsync --time IMG_1234.JPG=14:22:46        # pas bestandstijd aan
+  imsync --location IMG_1234.JPG=52.54,-11.7 # pas geografische locatie aan
+
+  # pas aan (als nodig) en rapporteer
+  imsync --modify
+
+=head1 SAMENVATTING
+
+  imsync [opties] [bestandspadpatronen]
+
+Dit programma kan in het bestandssysteem de bewerkingstijden van foto-
+en filmbestanden aanpassen die door een of meerdere camera's gemaakt
+zijn, gebaseerd op informatie die in de bestanden zit en op
+aanpassingen die door de gebruiker aangegeven worden.  Dit programma
+kan ook de bewerkingstijden van met de fotobestanden verbonden
+bestanden aanpassen, op basis van informatie uit de foto- en
+filmbestanden waarmee ze verbonden zijn en op informatie aangeleverd
+door de gebruiker.  Ook kan het geografische locaties toewijzen aan
+foto- en filmbestanden, gebaseerd op informatie gelezen uit
+GPX-bestanden.
+
+Roep dit programma om te beginnen aan zonder argumenten, in de map
+waarin de foto's staan.  Het programma onderzoekt de bestanden en
+rapporteert welke aanpassingen nodig zijn, maar past nog geen
+bestanden aan (behalve dat het het rapport naar het bestand
+I<imsync.log> schrijft).
+
+=head1 OPTIES
+
+  --cameraid BESTAND=ID  Geef een camera-ID aan voor een bestand.  Kan
+                   ook worden geschreven als --camera-id.
+  --clearlog       Maak het voortgangsrapportbestand leeg voordat er
+                   naar geschreven wordt.
+  --exportgpx [BESTAND]  Exporteer de geografische locaties naar dit
+                   bestand.  Als geen naam is gegeven, dan wordt
+                   export.gpx gebruikt.  Kan ook worden geschreven
+                   als --export-gpx.
+  --fastscan N     Kiest de snelheid van gegevensuitlezing uit
+                   bestanden, van 0 tot 2.  Hogere snelheden kunnen
+                   soms belangrijke informatie overslaan.  De
+                   standaardwaarde is 1.  Wordt doorgegeven aan de
+                   Image::ExifTool-module.  Kan ook worden geschreven
+                   als --fast-scan.
+  --follow BESTAND  Rapporteer zo uitvoering mogelijk over het
+                   bestand.
+  --force          Voeg ontbrekende informatie ook toe als de
+                   bewerkingstijd al goed is.
+  --help, -?       Korte uitleg van het gebruik van dit programma.
+                   Zie ook --man.
+  --location DOEL=LOC  Kopieer de GPS-locatie LOC naar DOEL.
+  --logfile BESTAND  Het bestand waarnaar voortgangsmeldingen
+                   geschreven worden.  Kan ook worden geschreven als
+                   --log-file.
+  --man            Als --help maar met meer details.
+  --modify         Pas de bestanden aan als nodig.  Het
+                   tegenovergestelde (en de standaard) is --no-modify,
+                   dat rapporteert maar niet aanpast.
+  --norecurse      Behandel geen submappen.  Het tegenovergestelde (en
+                   de standaard) is om submappen ook te behandelen.
+                   Kan ook worden geschreven als --no-recurse.
+  --offsetspath BESTAND  Het bestand met cameratijdverschillen, voor
+                   lezen en schrijven.  De standaardwaarde is
+                   .imsync-cameraoffsets.yaml in de huidige map of de
+                   thuismap.  Kan ook worden geschreven als
+                   --offsets-path.
+  --recurse        Behandel ook submappen.  Dit is de standaard.
+                   --Gebruik --no-recurse om submappen niet te
+                   --behandelen.
+  --removebackups  Verwijder back-upbestanden.  Kan ook worden
+                   geschreven als --remove-backups.
+  --removeourtags  Verwijder metainformatie die door dit programma was
+                   toegevoegd.  Kan ook worden geschreven als
+                   --remove-our-tags.
+  --reportlevel N  Zet het detailniveau van het eindrapport.  Kan ook
+                   worden geschreven als --report-level.
+  --restoreoriginals  Herstel originele bestanden uit back-ups.  Kan
+                   ook worden geschreven als --restore-originals.
+  --summertime BESTAND  De camera van het BESTAND schakelde net voor
+                   dat BESTAND over van wintertijd naar zomertijd.
+  --time BESTAND=TIJD  Geef de doeltijd of tijdverschuiving voor een
+                   bestand.  Kan meerdere keren gebruikt worden.
+  --unsafe         Maak geen back-upbestanden, en verwijder het
+                   voortgangsrapport.
+  --verbose N      Stelt het detailniveau van de voortgangsrapportage
+                   in, als een combinatie van bitvlaggen (tot 31).
+  --wintertime BESTAND  De camera van het BESTAND schakelde net voor
+                   dat BESTAND over van zomertijd naar wintertijd.
+  --working-directory MAP  Ga eerst naar de MAP.
+
+Optienamen kunnen worden afgekort zolang ze uniek blijven.
+Bijvoorbeeld, C<--reportlevel> kan worden afgekort helemaal tot
+C<--rep>, want geen andere optie begint daarmee.
+
+=head1 PARAMETERS
+
+De parameters van dit programma zijn nul of meer padnaampatronen die
+bestanden en mappen aangeven die verwerkt moeten worden.  Joker C<*>
+staat voor elk willekeurig aantal tekens en joker C<?> staat voor één
+teken.  Als geen parameterwaarden worden gegeven dan wordt de huidige
+map verwerkt.
+
+=head1 OPTIEDETAILS
+
+Sommige opties vragen een waarde die bestanden aangeeft.  De volgende
+manieren worden ondersteund om bestanden mee aan te geven, maar niet
+elke manier wordt ondersteund voor elke optie.
+
+=over
+
+=item * door een gedeeltelijke padnaam
+
+Een bestand voldoet als zijn padnaam eindigt met de gegeven tekst.
+
+=item * door een tijdstip
+
+Een bestand voldoet als het aanmaaktijdstip uit de metainformatie in
+het bestand (sleutelwoord I<CreateDate>) overeenkomt met het gegeven
+tijdstip.
+
+Het tijdstip moet een datum en tijd bevatten en mag een
+tijdzoneaanduiding bevatten.  Hier zijn twee voorbeelden (in
+ISO8601-formaat) die hetzelfde moment aangeven:
+
+  2015-09-17T22:14:33+01:00
+  2015-09-17T21:14:33Z
+
+Hier zijn wat andere aanvaardbare tijdstippen:
+
+  2015:09:17 22:14:33+01             (zelfde als vorige)
+  2015:09:17 22:14:33                (Exif-tijdstipformaat)
+  2015-09-17T13:44
+  2015-09-17T13
+  2015:09:17T13:03
+
+De datum en tijd moeten zijn gescheiden door een hoofdletter C<T> of
+door één spatie.  Als je een spatie gebruikt dan moet het hele
+tijdstip tussen dubbele aanhalingstekens staan, want anders wordt de
+spatie gezien als scheiding tussen verschillende parameterwaarden.
+
+De datum moet drie getallen bevatten (jaar, maand, dag), allen van
+elkaar gescheiden door een liggend streepje C<-> of allen door een
+dubbele punt C<:>.
+
+De tijd moet tenminste één en ten hoogste drie getallen bevatten (uur,
+minuut, seconde), van elkaar gescheiden door een dubbele punt C<:>.
+Voor aan het eind ontbrekende getallen wordt 0 aangenomen.
+
+Als een tijdzoneaanduiding gegeven wordt dan moet die de
+datum/tijdaanduiding volgen zonder tussenliggende spaties of andere
+tekens.  De tijdzoneaanduiding bestaat uit alleen de hoofdletter C<Z>,
+of uit een plus C<+> of min C<−> (Unicodeteken U+2212, kan raar
+getoond worden als je teksttoonprogramma geen UTF-8 kan tonen) of
+liggend streepje C<->, gevolgd door tenminste één en ten hoogste drie
+getallen (uur, minuut, seconde), van elkaar gescheiden door een
+dubbele punt C<:>.  Voor aan het eind ontbrekende getallen wordt 0
+aangenomen.  De C<Z> duidt een tijdzone aan gelijk aan 0, dus UTC.
+
+Als geen tijdzoneaanduiding is gegeven, dan wordt de tijdzone
+aangenomen die geldt volgens de tijdzoneregels van het computersysteem
+waarop dit programma wordt uitgevoerd.
+
+=item * door een tijdperiode
+
+Een bestand voldoet als het aanmaaktijdstip uit de metainformatie in
+het bestand in de aangegeven tijdperiode valt.
+
+De tijdperiode bestaat uit twee tijdstippen (zoals hierboven
+beschreven) gescheiden door een schuine streep C</>.  Uit het tweede
+tijdstip mag de datum ontbreken, daarvoor wordt dan de datum uit het
+eerste tijdstip aangenomen.  En net zo voor de tijdzoneaanduiding.
+Hier zijn een paar voorbeelden:
+
+  2001-02-03T04:05:06+07:00/2009-10-11T12:13:14
+  2017-07-05T06/09:17:22
+
+Het tweede voorbeeld omvat de periode van 06:00:00 tot en met 09:17:22
+op 5 juli 2017, in de lokale tijdzone.
+
+=back
+
+De beschrijving van elke opties meldt welke van deze manieren
+ondersteund wordt voor die optie.
+
+Hier begint een gedetailleerde beschrijving van alle opties.  In die
+beschrijvingen betekent I<foto> een bestand dat een foto of een film
+bevat met metainformatie met daarin een aanmaaktijdstip.
+
+=head2 --cameraid
+
+  --cameraid BESTAND=ID
+  --camera-id BESTAND=ID
+
+Geeft de camera-ID die bij het doelbestand hoort, als de camera-ID die
+imsync zelf afleidt voor dat bestand niet goed is.
+
+C<BESTAND> mag een gedeeltelijke padnaam of een tijdstip of een
+tijdperiode zijn en bepaalt welke bestanden de camera-ID krijgen.
+
+C<ID> is de camera-ID om aan de bestanden te koppelen, in plaats van
+de standaardcamera-ID die van diverse metainformatiewaarden afhangen.
+Spaties aan het begin of het einde van de ID worden genegeerd, en de
+ID mag niet leeg zijn.
+
+Als het bestand aangepast wordt (L</--modify>), dan wordt de opgegeven
+camera-ID aan de metainformatie toegevoegd (ons eigen sleutelwoord
+I<XMP:CameraID>).
+
+=head2 --clearlog
+
+  --clearlog
+  --clear-log
+
+Zegt om de oude inhoud van het voortgangsrapportbestand te wissen
+voordat de eerste nieuwe melding daaringeschreven wordt.  Als deze
+optie niet wordt opgegeven dan blijft de oude inhoud behouden en
+worden de nieuwe meldingen daaraan toegevoegd.
+
+=head2 --exportgpx
+
+  --exportgpx
+  --exportgpx BESTAND
+
+Ook geschreven als C<--export-gpx>.
+
+Exporteert naar het opgegeven bestand (of naar I<export.gpx>) de
+geografische locatie en tijd van alle onderzochte bestanden waarvoor
+die informatie beschikbaar is.  Importeer het GPX-bestand in een
+geografisch programma om te zien waar de foto's genomen zijn.
+
+=head2 --fastscan
+
+  --fastscan N
+  --fast-scan N
+
+Kiest de snelheid waarmee metainformatie uit bestanden gelezen wordt,
+van 0 tot 2.  Een hoger getal geeft snellere verwerking maar kan
+belangrijke informatie missen.  De standaardwaarde is 1.  Komt overeen
+met de FastScan-optie in L<Image::ExifTool/Options>.
+
+=head2 --follow
+
+  --follow BESTAND
+
+Maakt voortgangsmeldingen over het doelbestand zo gedetailleerd
+mogelijk.  C<BESTAND> mag een gedeeltelijke padnaam of een tijdstip of
+een tijdperiode zijn.  Zie ook L</--verbose>.
+
+=head2 --force
+
+  --force
+  --force --force
+
+Dit programma is terughoudend in het aanpassen van bestanden.  Als
+geen C<--force> is gekozen dan wordt voor een bestand aangepast alleen
+nodig gevonden als aan een of meer van de volgende voorwaarden is
+voldaan:
+
+=over
+
+=item
+
+het aanpassingstijdstip dat voor het bestand in het bestandssysteem
+geregistreerd staat heeft aanpassing nodig
+
+=item
+
+een expliciete tijd (L</--time>) of geografische locatie
+(L</--location>) is aangegeven voor het bestand
+
+=item
+
+de GPS-positie in de metainformatie van het bestand heeft aanpassing
+nodig, en de I<XMP:TimeSource>-sleutel is aanwezig en zijn waarde is
+anders dan C<GPS> (dus de bestaande GPS-positie werd niet vastgelegd
+door een GPS-ontvanger verbonden met de camera).
+
+=back
+
+Gebruik C<--force> om minder terughoudend te zijn, of C<--force
+--force> voor nog meer aandrang.
+
+Met een enkele C<--force> wordt het bestand aangepast zelfs als alleen
+metainformatie uit de volgende group aanpassing nodig heeft:
+I<XMP:CameraID>, I<DateTimeOriginal>, I<XMP:DateTimeOriginal>,
+I<XMP:ImsyncVersion>, I<XMP:TimeSource>.
+
+Met twee C<--force> wordt de GPS-positie aangepast zelfs als de
+I<XMP:TimeSource>-sleutel ontbreekt in de metainformatie of een waarde
+heeft gelijk aan C<GPS>.  Dit betekent dat de originele GPS-positie
+die door de GPS-ontvanger van de camera werd opgeslagen verloren gaat.
+
+=head2 --help
+
+  --help
+  -?
+
+Drukt tekst af die kort de opties en parameters van dit programma
+uitleggen, en stopt dan.  Zie ook L</--man>.
+
+=head2 --location
+
+  --location DOEL=LOC
+
+Kopieert de geografische informatie aangegeven door C<LOC> naar het
+C<DOEL>, als de locatie die imsync voorstelde niet goed was.
+
+Het doel mag een gedeeltelijke padnaam zijn of een tijdstip of een
+tijdperiode.
+
+De geografische informatie mag worden aangegeven als een gedeeltelijke
+padnaam of als een verzameling geografische coördinaten.  Als het een
+gedeeltelijke padnaam is dan moet het bij precies één bestand horen en
+dan wordt de geografische informatie uit dat bestand naar het
+doelbestand gekopieerd.
+
+De verzameling geografische coördinaten omvat de geografische
+breedtegraad en lengtegraad in graden, en naar keuze ook de hoogte in
+meters boven zeeniveau, allen met een punt C<.> als decimaalteken.
+Noorderbreedten en oosterlengten en hoogtes boven zeeniveau mogen
+beginnen met een plusteken C<+>.  Zuiderbreedten en westerlengten en
+dieptes onder zeeniveau moeten met een minteken C<-> aangegeven
+worden.
+
+=head2 --logfile
+
+  --logfile BESTAND
+  --log-file BESTAND
+
+Bepaalt het bestand waarnaar voortgangmeldingen geschreven worden
+(naast hun weergave op de standaarduitvoer, meestal het scherm).  Als
+deze optie niet gebruikt wordt dan wordt I<imsync.log> gebruikt.
+
+=head2 --man
+
+  --man
+
+Als C<--help>, maar geeft veel meer informatie over het programma.
+
+=head2 --modify
+
+  --modify
+
+Pas bestanden aan waar dat nodig is.  Als deze optie niet gebruikt
+wordt, of als zijn tegendeel C<--no-modify> gebruikt wordt, dan worden
+de toepasselijke aanpassingen gemeldt maar niet toegepast.
+
+=head2 --norecurse
+
+  --norecurse
+  --no-recurse
+
+Zegt dat bestanden in de aangegeven mappen moeten worden behandeld
+maar niet in submappen daarvan.  Het tegendeel (en de standaard) is
+C<--recurse>, dat ook submappen behandelt.
+
+=head2 --offsetspath
+
+  --offsetspath BESTAND
+  --offsets-path BESTAND
+
+Zegt welk bestand de cameratijdverschilinformatie bevat.  Die
+informatie wordt aan het begin uitgelezen en bijgewerkte informatie
+wordt aan het eind teruggeschreven (als C<--modify> wordt gebruikt).
+
+De standaardwaarde is I<.imsync-cameraoffsets.yaml> in de huidige map.
+Als dat bestand niet bestaat, en als de C<HOME> omgevingsvariabele
+gedefinieerd is, dan wordt het bestand met die naam gezocht in de map
+genoemd in de C<HOME> omgevingsvariabele.
+
+=head2 --recurse
+
+  --recurse
+
+Behandel ook submappen.  Dit is de standaard.  Het tegenovergestelde
+is C<--norecurse>.
+
+=head2 --removebackups
+
+  --removebackups
+  --remove-backups
+
+Dit programma past alleen fotobestanden aan als daarvan een back-up
+bestaat.  De back-up heeft dezelfde naam maar met I<_original>
+toegevoegd aan het eind.  Deze optie verzoekt verwijdering van de
+back-upbestanden die door de parameterwaarden worden aangegeven, en
+daarna stopt het programma.
+
+Als je alle back-upbestanden in een map en zijn submappen wilt
+verwijderen, geef dan die map als parameter.  Als je een bepaald
+back-upbestand wilt verwijderen, geeft dan een padnaampatroon dat dat
+bestand kiest inclusief de I<_original> aan het einde.  Zie ook
+L</--restoreoriginals>.
+
+=head2 --removeourtags
+
+  --removeourtags
+  --remove-our-tags
+
+Verwijdert de metainformatie die door vorige aanroepen van dit
+programma waren toegevoegd.
+
+De volgende metainformatie wordt alleen verwijderd als
+I<XMP:TimeSource> gezet is en een waarde ongelijk aan C<GPS> heeft:
+I<GPSLongitude>, I<GPSLatitude>, I<GPSAltitude>, I<GPSDateTime>,
+I<GPSDateStamp>, I<GPSTimeStamp>.
+
+De volgende metainformatie wordt altijd verwijderd: I<XMP:CameraID>,
+I<XMP:ImsyncVersion>, I<XMP:TimeSource>.
+
+De I<XMP:DateTimeOriginal> en I<DateTimeOriginal> worden niet
+verwijderd, omdat we niet zeker kunnen weten dat die door eerdere
+aanroepen van het huidige programma werden toegevoegd.
+
+=head2 --reportlevel
+
+  --reportlevel N
+  --report-level N
+
+Bepaalt het detailniveau van het eindrapport:
+
+0 onderdrukt het eindrapport.
+
+1 meldt alleen bestanden waarvoor een aanpassing nodig is.
+
+2 meldt alle bestanden (die niet werden overgeslagen), zelfs die
+waarvoor geen aanpassing nodig is.
+
+3 is als 2 maar meldt ook cameratijdverschillen.
+
+=head2 --restoreoriginals
+
+  --restoreoriginals
+  --restore-originals
+
+Zet originele bestanden terug uit back-ups.
+
+Als je alle back-ups uit een map en zijn submappen terug wilt zetten,
+geef dan die map op.  Als je een bepaalde back-up terug wilt zetten,
+geef dan een padnaampatroon op dat die back-up kiest inclusief de
+I<_original> aan het eind.  Zie ook L</--deleteoriginals>.
+
+=head2 --summertime
+
+  --summertime BESTAND
+
+Dit zegt dat de klok van de camera dat het C<BESTAND> maakte één uur
+naar voren werd verzet net voordat dat bestand werd gemaakt.  Gebruik
+dit als de cameraklok verschuift van wintertijd naar zomertijd.
+
+C<BESTAND> mag een gedeeltelijke padnaam of een tijdstip of een
+tijdperiode zijn.  Als het een tijdperiode is met meer dan één foto
+erin, dan is het resultaat hetzelfde als voor alleen de eerste van die
+foto's.
+
+Het tegenovergestelde is L</--wintertime>.
+
+=head2 --time
+
+ --time BESTAND=TIJD
+
+Zet de tijd of tijdverschuiving of tijdzoneinformatie voor een of meer
+doelbestanden, voor als de tijd die imsync voorstelt niet goed is.
+
+C<BESTAND> mag een gedeeltelijke padnaam zijn of een tijdstip of een
+tijdperiode.
+
+C<TIJD> mag een tijdstip (met datum en tijd) zijn of alleen een tijd
+of een tijdverschuiving of een gedeeltelijke padnaam.
+
+Als C<TIJD> alleen een tijd is dan moet het een kloktijd zijn met
+uren, minuten en naar keuze ook seconden, gescheiden door dubbele
+punten, zoals bijvoorbeeld
+
+  17:22
+  17:22:43
+
+Deze kloktijd wordt gecombineerd met een datum zodat het gecombineerde
+tijdstip hooguit 12 uur voor of na de I<CreateDate>-metainformatie van
+het doelbestand is -- dus dit werkt alleen als het doelbestand die
+metainformatie bevat.  Dit is handig als je een tijdstip nabij de
+I<CreateDate> wilt opgeven.
+
+Als C<TIJD> een tijdverschuiving is dan moet het een getal zijn (met
+minteken als nodig, of plusteken naar keuze) of anders vergelijkbaar
+zijn met
+
+  +2y50d2h16m5s
+
+waar het getal voor C<y> het aantal jaren is (van 365 dagen), en net
+zo C<d> voor dagen, C<h> voor uren, C<m> voor minuten en C<s> voor
+seconden.  Als deze componenten en het plus- of minteken zijn niet
+verplicht, maar de componenten die meedoen moeten in de gegeven
+volgorde staan.  Hier zijn nog wat voorbeelden:
+
+  3d10s             (voor plus 3 dagen en 10 seconden)
+  -10d              (voor min 10 dagen)
+
+De opgegeven verschuiving wordt gemeten ten opzichte van de
+I<CreateDate>-metainformatie, dus dit werkt alleen als het doelbestand
+die metainformatie bevat.
+
+Als C<TIJD> een gedeeltelijke padnaam is en als er maar één bestand
+uit alle bestanden die verwerkt worden past bij die gedeeltelijke
+padnaam dan is de I<oorspronkelijke>
+C<DateTimeOriginal>-metainformatie (van voor de imsync-aanroep) van
+dat bestand de doeltijd voor de doelbestanden.
+
+=head2 --unsafe
+
+  --unsafe
+
+Zegt om geen back-ups te maken voordat bestanden worden aangepast.
+Als het aanpassen van het originele bestand faalt dan is er geen
+back-up waaruit dat origineel hersteld kan worden.  Als het programma
+gewoon aan zijn eind komt dan wordt de voortgangslog gewist.
+
+=head2 --verbose
+
+  --verbose N
+
+Zet het detailniveau van de voortgangsmeldingen.  De standaardwaarde
+is 0.  Hogere waarden (tot aan 31) geven meer details.
+
+=head2 --version
+
+  --version
+
+Meldt de versie van het programma, van L<GetOpt::Long> en van L<Perl>.
+
+=head2 --wintertime
+
+  --wintertime BESTAND
+
+Dit zegt dat de klok van de camera dat het C<BESTAND> maakte één uur
+naar achteren werd verzet net voordat dat bestand werd gemaakt.
+Gebruik dit als de cameraklok verschuift van zomertijd naar
+wintertijd.
+
+C<BESTAND> mag een gedeeltelijke padnaam of een tijdstip of een
+tijdperiode zijn.  Als het een tijdperiode is met meer dan één foto
+erin, dan is het resultaat hetzelfde als voor alleen de eerste van die
+foto's.
+
+Het tegenovergestelde is L</--summertime>.
+
+=head2 --workingdirectory
+
+  --working-directory MAP
+  --workingdirectory MAP
+
+Verander de huidige map naar C<MAP> voordat de verwerking begint.
+
+=head1 BESCHRIJVING
+
+Dit programma kan de bewerkingstijden die voor foto's en films van een
+of meer camera's in het bestandssysteem geregistreerd staan
+synchroniseren, en ook de bewerkingstijden van verwante bestanden,
+gebaseerd op informatie geleverd door de gebruiker en op
+metainformatie gelezen uit andere foto's van dezelfde camera's.  Het
+kan bovendien geografische coördinaten toevoegen aan de metainformatie
+van foto's en films, gebaseerd op informatie uit GPX-bestanden.
+
+Metainformatie in foto- en filmbestanden wordt uitgelezen, aangepast,
+of toegevoegd met hulp van L<Image::ExifTool>, dus als die module de
+metainformatie niet kan lezen of schrijven dan kan imsync dat ook
+niet.  De namen van metainformatiewaarden die hieronder genoemd worden
+zijn de namen zoals die module ze kent.
+
+De bestanden worden in meerdere fasen verwerkt:
+
+=over
+
+=item 1. Inspect
+
+Tijdens de eerste fase worden alle gekozen bestanden gelezen om de
+benodigde informatie te vergaren maar worden er geen bestanden
+aangepast, omdat we informatie uit later gelezen bestanden nodig
+kunnen hebben om de juiste behandeling van eerder gelezen bestanden te
+bepalen, maar dat kunnen we niet weten tot we alle bestanden bekeken
+hebben.
+
+Belangrijke metainformatie wordt onthouden en bestanden die te weinig
+nuttige metainformatie bevatten worden verder genegeerd.
+
+=item 2. GPX
+
+Tijdens de tweede fase worden GPS-tijden en -posities uit alle
+gevonden GPX-bestanden gelezen.
+
+=item 3. Determine
+
+Tijdens de derde fase worden de doeltijden en (zo mogelijk)
+geografische locatie bepaald voor alle overgebleven bestanden.  De
+doeltijd en locatie worden bepaald uit informatie vergaard tijdens de
+vorige fases.
+
+De doeltijd voor elk bestand wordt bepaald uit metainformatie uit dat
+bestand en (waar nodig) in andere bestanden die door een camera met
+dezelfde camera-ID gemaakt werden, of in andere bestanden met
+hetzelfde bestandnummer.
+
+=item 4. Modify
+
+Als bestandaanpassing gevraagd is (L</--modify>), dan worden de
+bestanden tijdens de vierde fase waar nodig aangepast om ze hun
+doeltijd en -locatie te geven.
+
+=back
+
+Voortgang tijdens elke fase wordt getoond in een voortgangsbalk (als
+dat nuttig is).  De voortgangsaanwijzer gaat vooruit wanneer weer een
+volgend bestand verwerkt is, dus als die verwerking lang duurt dan kan
+het lijken alsof de voortgangsbalk bevroren is.  Voortgangsmeldingen
+worden ook naar een logbestand geschreven, met instelbaar detailniveau
+(L</--verbose>).  Aan het eind wordt een instelbaar rapport getoond
+(L</--report-level>) dat de doeltijd en andere informatie toont voor
+bestanden waarvoor dat van belang is.
+
+=head2 Camera-ID
+
+In een aanroep van dit programma kunnen foto's en films van meerdere
+camera's worden verwerkt.  De interne klokken van die camera's kunnen
+verschillende tijden geven omdat ze niet goed ingesteld zijn of omdat
+ze langzaamaan uit de pas lopen of omdat ze andere
+tijdzoneinstellingen hebben, dus een tijdzone-tijdverschil dat voor
+één camera gevonden werd is niet geschikt voor een andere camera.  We
+moeten voor elke camera apart het tijdzone-tijdverschil bepalen, wat
+betekent dat we elke camera apart moeten kunnen identificeren.
+
+De meeste camera's melden het merk en model in de metainformatie van
+de afbeeldingen (bij sleutelwoorden I<Make> en I<Model>).  Sommige
+camera's melden ook hun serienummer (I<SerialNumber>).  Als deze
+kenmerken niet allemaal afwezig of leeg zijn dan maken ze samen,
+gescheiden door een verticale streep C<|>, de (voorkeurs-)I<camera-ID>
+(camera-identificatiecode).  Tijdzone-tijdverschillen worden voor elke
+camera-ID apart bijgehouden.
+
+Als de meta-informatie van een foto geen merk, model en serienummer
+bevat dan kan voor deze foto de vervangende camera-ID gebruikt worden.
+Deze wordt uit de bestandsnaam afgeleid door (1) de mapnamen weg te
+laten, (2) de bestandsnaamuitgang weg te laten, (3) elke rij van
+cijfers te vervangen door de lengte van die rij, en (4) een vraagteken
+C<?> er voor te zetten.  Bijvoorbeeld, de vervangende camera-ID van
+bestand I<vacationpics/IMG220_5532.JPG> is C<?IMG3_4>.
+
+Als de metainformatie van een foto geen merk/model/serinummer bevat
+waaruit een voorkeurscamera-ID kan worden gemaakt dan kan die foto de
+voorkeurscamera-ID van een andere foto overnemen als de vervangende
+camera-ID voor beide foto's hetzelfde is en aan die vervangende
+camera-ID alleen die ene voorkeurscamera-ID gekoppeld is voor de
+foto's die tijdens de huidige aanroep van het programma verwerkt
+worden.
+
+Dezelfde camera-ID kan voor meerdere camera's gebruikt worden als de
+combinatie van beschikbare kenmerken niet uniek is, bijvoorbeeld als
+twee camera's hetzelfde merk en model hebben en allebei geen
+serienummer in de metainformatie zetten.  In dat geval kan de
+gebruiker zelf een onderscheidende camera-ID toekennen met de
+L</--camera-id>-optie.
+
+De camera-ID wordt aan de metainformatie van de afbeeldingen
+toegevoegd (gekoppeld aan ons eigen sleutelwoord I<XMP:CameraID>) als
+de afbeeldingen aangepast worden (L</--modify>), zodat je deze
+camera-ID niet opnieuw hoeft op te geven als deze afbeeldingen in een
+latere aanroep van dit programma opnieuw verwerkt worden.
+
+=head2 Cameratijdverschil
+
+We moeten het verschil weten tussen de tijdstippen die de
+cameraklokken meldden (en die in de metainformatie van de afbeeldingen
+terechtkwamen) en UTC (gecoördineerde wereldtijd), zodat we de
+tijdstippen van de verschillende camera's kunnen synchroniseren en
+zodat we geografische locaties voor de afbeelding kunnen afleiden uit
+GPS-sporen.  De cameraklokken kunnen elk een andere tijd geven vanwege
+tijdzoneinstellingsverschillen en omdat ze niet allemaal met precies
+dezelfde snelheid lopen.  Veel (vooral oudere) fotobestanden bevatten
+helemaal geen tijdzoneinformatie.
+
+Het I<cameratijdverschil> is het verschil tussen de tijdzone van de
+cameraklok (met afwijkingen erbij) en UTC.  Als het tijdstip in de
+metainformatie van de foto 17:24:33 is en de foto genomen werd op
+15:23:11 UTC, dan is het cameratijdverschil +02:01:22.
+
+De cameratijdverschillen zijn waardevol: Als er een gevonden is voor
+een foto, dan kan die ook worden toegepast voor andere foto's genomen
+door dezelfde camera.
+
+Als de eerste foto die voor een bepaalde camera-ID verwerkt wordt geen
+tijdzoneinformatie in zijn metainformatie heeft dan neemt imsync aan
+dat de tijdstippen in die metainformatie zijn gegeven in de tijdzone
+die gold voor die datum en tijd op het computersysteem waarop imsync
+uitgevoerd wordt.  Als later andere foto's voor dezelfde camera-ID
+worden verwerkt dan is er al tenminste één cameratijdverschil bekend
+voor die camera-ID en die kan dan opnieuw gebruikt worden.
+
+Gebruik L</--time> om een andere doeltijd voor een foto in te stellen
+als dat nodig is.  Dit bepaalt een cameratijdverschil voor de
+bijbehorende camera, die dan ook gebruikt kan worden voor het afleiden
+van doeltijden voor andere afbeeldingen door dezelfde camera.  Je
+hoeft maar één L</--time> voor een bepaalde camera op te geven, totdat
+het bijbehorende tijdzonetijdverschil niet meer goed is (bijvoorbeeld
+omdat de cameraklok meer uit de pas is gaan lopen).
+
+=head3 Cameratijdverschilbestand
+
+Aan het begin van imsync worden cameratijdverschillen uit het
+I<cameratijdverschilbestand> gelezen.  De cameratijdverschillen die
+tijdens de verwerking van de foto's worden gevonden worden ingevoegd
+en de bijgewerkte informatie wordt weer naar hetzelfde bestand
+geschreven (als L</--modify> is gebruikt).  Als L</--offsets-path> is
+gebruikt dan bepaalt zijn waarde het cameratijdverschilbestand.  En
+anders wordt het bestand I<.imsync-cameraoffsets.yaml> in de huidige
+folder gebruikt als dat bestand bestaat.  En als dat bestand niet
+bestaat dan wordt hetzelfde bestand in de thuismap van de gebruiker
+(zoals gegeven door de omgevingsvariabele met naam C<HOME>).
+
+De informatie wordt naar het bestand geschreven in
+L<YAML|http://www.yaml.org>-formaat.  Het bestaat uit één hashtabel
+waarvan de sleutels de camera-IDs zijn.  De bijbehorende waarden zijn
+ook weer hashtabellen, waarvan de sleutels de tijdstippen in de
+cameratijdzones zijn en de waarden de cameratijdverschillen zijn die
+gelden vanaf de tijden die door de sleutels worden aangegeven.  Hier
+is een voorbeeld:
+
+    ---
+    CameraID1:
+      2017-06-22T15:57:01: +0:00
+    CameraID2:
+      2017-06-19T14:08:22: +1:05:46
+    CameraID3:
+      2017-06-20T00:15:54: +4:00
+      2017-06-23T05:21:25: +2:00
+      2017-06-25T13:44:12: +2:00
+
+Van de camera's met camera-IDs C<CameraID1> and C<CameraID2> is tot nu
+toe elk maar één foto of film verwerkt.  Van de camera met camera-ID
+C<CameraID3> zijn al meerdere afbeeldingen verwerkt, waarvan de
+tijdstippen vanaf het eerstgenoemde tot net voor het tweede waren in
+tijdzone UTC+4:00, en degenen vanaf het tweede tijdstip tot en met het
+laatste tijdstip waren in tijdzone UTC+2:00.
+
+Voor elke camera-ID zijn de eerste en laatste tijdstippen die in het
+cameratijdverschilbestand staan verbonden met de oudste en jongste
+foto's die door die camera werden genomen en door imsync verwerkt
+werden.
+
+=head3 Afbeeldingsbestanden met metainformatie in UTC
+
+De tijdstippen in de metainformatie in de meeste afbeeldingsbestanden
+geven de camerakloktijd, die meestal is afgesteld op of nabij de
+lokale tijdzone.  Echter, sommige afbeeldingsbestanden (zoals
+Apple-QuickTime-bestanden) hebben tijdstippen in hun metainformatie
+waarvan de bedoeling is dat die in de UTC-tijdzone gegeven zijn,
+ongeacht de lokale tijdzone.  Die tijdstippen zijn niet altijd echt in
+UTC, want veel camera's weten helemaal niet in welke tijdzone hun klok
+is afgesteld en weten dus ook niet wat de tijd in UTC is.  In elk
+geval kunnen tijdstippen in metainformatie in afbeeldingen met
+bedoeld-UTC-tijdstippen in een andere tijdzone zijn dan tijdstippen in
+metainformatie in afbeeldingen met lokale-tijdzone-tijdstippen die door
+dezelfde camera genomen werden.
+
+Dit betekent dat het handig is om afbeeldingen met
+bedoeld-UTC-tijdstippen te behandelen alsof ze door een andere camera
+werden opgenomen dan afbeeldingen met lokale-tijdzone-tijdstippen die
+door die camera genomen werden, anders blijft het cameratijdverschil
+heen en weergaan tussen de lokale tijdzone en UTC wanneer
+bedoeld-UTC-afbeeldingen gemengd zijn met lokale-tijdzone-afbeeldingen
+van dezelfde camera.
+
+Hiervoor krijgen bedoeld-UTC-afbeeldingen een extra C<|U> geplakt aan
+hun voorkeurs-L<camera-ID|/Camera-ID>.  Als de camera-ID voor een foto
+of film in de lokale tijdzone C<Merk|Model|Serienummer> is, dan is de
+camera-ID voor een bedoeld-UTC-afbeelding door dezelfde camera gelijk
+aan C<Merk|Model|Serienummer|U>.
+
+=head2 GPS-bepalingsvertraging
+
+Een camera die verbonden is met een GPS-ontvanger (zoals in moderne
+mobiele telefoons) kan een GPS-tijdstip en GPS-locatie in de
+metainformatie van de afbeeldingsbestanden schrijven.  Dat tijdstip en
+die locatie zijn de meest recente die door de GPS-ontvanger bepaald
+werden, maar die bepaling kan al een paar seconden oud zijn wanneer de
+afbeelding wordt genomen.  Ik noem het verschil tussen de tijd van de
+GPS-bepaling en de tijd waarom de afbeelding werd vastgelegd de
+I<GPS-bepalingsvertraging>.  Als het GPS-tijdstip zonder meer gebruikt
+wordt om daaruit het cameratijdverschil te bepalen dan zal dat
+tijdverschil een paar seconden afwijken vanwege de
+GPS-bepalingsvertraging, en die afwijking kan van foto tot foto anders
+zijn.
+
+Gelukkig kennen apparaten waarin een GPS-ontvanger zit de tijd heel
+nauwkeurig, dus hun echte cameratijdverschil moet een precies veelvoud
+van 15 minuten zijn, want alle officiële tijdzones in de wereld zijn
+zo.
+
+Als er al een GPS-tijdstip in de metainformatie zit en er is geen
+aanduiding dat dat tijdstip door een eerdere aanroep van dit programma
+is toegevoegd (zie L</TimeSource>) en het afgeleide cameratijdverschil
+wijkt minder dan 2 minuten af van een veelvoud van 15 minuten, dan
+gebruikt imsync dat veelvoud van 15 minuten als het
+cameratijdverschil.
+
+Bijvoorbeeld, als een afbeelding de volgende tijdstippen in zijn
+metainformatie heeft
+
+  GPSDateTime = 2015-03-17T14:15:16
+  CreateDate  = 2015-03-17T11:15:23
+
+dan is de dichtstbijzijnde tijdzone die een veelvoud van 15 minuten is
+−3:00:00 en de GPS-bepalingsvertraging is 7 seconden.
+
+=head2 Zelfbepaalde tijdstippen
+
+Als het doeltijdstip dat imsync voor een afbeelding voorstelt niet
+goed is dan zijn er verschillende manieren om die aan te passen.
+
+=over
+
+=item
+
+Gebruik de L</--time>-optie om de gewenste doeltijd op te geven, of
+het verschil dat moet worden toegepast om de voorgestelde tijd te
+verbeteren, of een ander bestand waarvan het tijdstip gekopieerd moet
+worden.
+
+=item
+
+Gebruik de L</--summertime>- of L</--wintertime>-opties om de
+voorgestelde tijd met precies een uur aan te passen.
+
+=item
+
+Pas handmatig het
+L<cameratijdverschilbestand|/Cameratijdverschilbestand> aan.
+
+=back
+
+=head2 TimeSource
+
+imsync kan uit de I<XMP:TimeSource>-metainformatie afleiden wat de
+bron van de locatieinformatie en I<GPSDateTime> was, want imsync voegt
+I<XMP:TimeSource> toe als het een bestand aanpast.  I<XMP:TimeSource>
+krijgt een van de volgende waarden:
+
+=over
+
+=item GPS
+
+Er was al een I<GPSDateTime> (en vermoedelijk een locatie) in de
+metainformatie toen imsync dat bestand voor het eerst verwerkte.
+imsync past het doeltijdstip en de locatie niet aan, behalve misschien
+als L</--time> of L<--force --force|/--force> wordt gebruikt voor dat
+bestand.
+
+=item User
+
+De gebruiker heeft een doeltijdstip opgegeven via de L</--time>-optie.
+imsync past het doeltijdstip niet aan (behalve als een nieuwe
+L</--time> is gegeven voor dit bestand), maar kan de locatie aanpassen
+als er een ander GPX-bestand beschikbaar is.
+
+=item Other
+
+Het huidige tijdstip was gebaseerd op een cameratijdverschil.  imsync
+kan zowel het doeltijdstip als de locatie aanpassen.
+
+=back
+
+Als er een I<GPSDateTime> maar geen I<XMP:TimeSource> is, dan wordt
+het bestand behandeld alsof I<XMP:TimeSource> de waarde C<GPS> heeft.
+
+=head2 Doeltijdstippen
+
+Het I<doeltijdstip> is het tijdstip dat wordt toegewezen aan het
+bestand.
+
+Als een tijdstip voor het bestand is gegeven via de L</--time>-optie,
+dan wordt dat tijdstip gebruikt als het doeltijdstip van het bestand.
+
+Anders, als een L<cameratijdverschil|/Cameratijdverschil> voor het
+bestand is gegeven via de C<--time>-optie, en als het bestand een
+aanmaaktijdstip in zijn metainformatie heeft (sleutel I<CreateDate>),
+dan is het doeltijdstip gelijk aan het aanmaaktijdstip met daarop het
+cameratijdverschil toegepast.
+
+Anders, als er een GPS-tijdstip (sleutel I<GPSDateTime>) in de
+metainformatie is, dan wordt het doeltijdstip daarop gebaseerd (maar
+zie L</GPS-bepalingsvertraging>).
+
+Anders, als er al een cameratijdverschil bekend is voor die
+L<camera-ID|/Camera-ID>, dan wordt dat cameratijdverschil toegepast op
+de aanmaakdatum uit de metainformatie om het doeltijdstip te vinden.
+
+Anders, als het bestand in zijn metainformatie een origineel tijdstip
+heeft (sleutel I<DateTimeOriginal>), dan wordt dat gebruikt als het
+doeltijdstip.
+
+Anders, als het bestand in zijn metainformatie een aanmaaktijdstip
+heeft (sleutel I<CreateDate>), dan wordt dat gebruikt als het
+doeltijdstip.
+
+Anders is het bestand geen (standaard-)afbeeldingsbestand en wordt het
+aangemerkt voor latere verwerking als alle
+(standaard-)afbeeldingsbestanden verwerkt zijn.  Zie
+L</Bestandsnummers>.
+
+=head2 Bestandsnummers
+
+Als de naam van een bestand (zonder het map-deel en zonder de
+bestandsnaamuitgang) cijfers bevat, dan bepaalt de laatste rij van
+cijfers het I<bestandsnummer>.  Bijvoorbeeld, als de bestandsnaam
+I<DSC1234.JPG> is dan is het bestandsnummer 1234.  Als de bestandsnaam
+I<Q5422_5376.TXT> is, dan is het bestandsnummer 5376.  Als er geen
+doeltijdstip bepaald kan worden op de hierboven beschreven manier, dan
+kan een doeltijdstip gekopieerd worden van een ander bestand met
+hetzelfde bestandsnummer.  Op deze manier eindigen bestanden die geen
+afbeeldingen zijn in de buurt van de bijbehorende afbeeldingsbestanden
+in dezelfde map als alle bestanden worden gesorteerd op hun
+bewerkingstijdstip zoals geregistreerd in het bestandssysteem.
+
+Als er meerdere bestanden met een doeltijdstip en met hetzelfde
+bestandsnummer zijn, dan wordt degene die het "dichtste" bij het
+huidige bestand is gekozen om zijn doeltijdstip te doneren.
+
+=head2 Geografische locaties
+
+imsync can de geografische locatieinformatie in de metainformatie van
+een bestand aanpassen of toevoegen.
+
+Als de locatieinformatie die al in de metainformatie van een
+afbeeldingbestand zit daar niet door imsync was neergezet
+(I<XMP:TimeSource> is afwezig of heeft de waarde C<GPS>), dan past
+imsync die niet aan behalve misschien als L<--force --force|/--force>
+wordt gebruikt.  In de meeste gevallen zal die informatie geleverd
+zijn door een GPS-ontvanger gekoppeld aan de camera dus is het bijna
+niet mogelijk om betere locatieinformatie te vinden.
+
+L<GPX|https://nl.wikipedia.org/wiki/GPS_Exchange_Format>-bestanden
+kunnen locatieinformatie bevatten voor meerdere tijdperiodes.  Als een
+GPX-bestand samen met afbeeldingsbestanden verwerkt wordt, en als het
+doeltijdstip van een van de afbeeldingsbestanden valt binnen de
+tijdperiode van een van de sporen in een GPX-bestand, dan berekent
+imsync een locatie voor het doeltijdstip en koppelt die aan het
+afbeeldingsbestand.
+
+Als meer dan een GPS-spoor het doeltijdstip bevat dan wordt het spoor
+dat in het bestandssysteem het dichtst bij het afbeeldingsbestand
+staat gebruikt.
+
+Als er geen toepasselijke GPS-sporen zijn, dan kan een locatie voor
+een afbeeldingsbestand handmatig aangegeven worden met de
+L</--location>-optie.
+
+=head2 Aanpassing
+
+De kenmerken die voor een bestand zijn afgeleid tijdens de
+'Determine'-fase worden vergeleken met de originele waarden die
+tijdens de 'Inspect'-fase werden gevonden.  Als sommige van die
+kenmerken van waarde zijn veranderd dan kan aanpassing van het bestand
+aangewezen zijn.
+
+Als geen L</--force> gebruikt wordt, dan is aanpassing alleen
+aangewezen als het afgeleide doeltijdstip afwijkt van het
+bewerkingstijdstip dat voor het bestand geregistreerd is in het
+bestandssysteem.
+
+Aanpassing is dan ook aangewezen als de GPS-locatie met tenminste 1
+meter veranderd is, maar alleen als de originele GPS-locatie door
+imsync was berekend (I<XMP:TimeSource> was gezet en ongelijk aan
+C<GPS>).  We noemen zo'n GPS-positie I<flexibel>.  We willen niet te
+gemakkelijk een GPS-positie verliezen die door de originele camera in
+de metainformatie van het bestand werd geschreven.
+
+Als C<--force> gebruikt wordt, dan is aanpassing ook aangewezen als
+een of meer van I<XMP:CameraID>, I<DateTimeOriginal>,
+I<XMP:ImsyncVersion>, en I<XMP:TimeSource> een andere waarde hebben
+gekregen.
+
+Als C<--force --force> wordt gebruikt, dan is aanpassing ook
+aangewezen als de GPS-positie met meer dan 1 meter is veranderd en
+niet flexibel is.
+
+Als aanpassing aangewezen is dan wordt het bestand alleen echt
+aangepast als L</--modify> gebruikt wordt.  Zonder die optie worden de
+voorgestelde wijzigingen wel gemeld maar niet toegepast.
+
+Als het bestand aangepast wordt dan worden alle veranderde
+metainformatie bijgewerkt, maar de GPS-positie alleen als die flexibel
+is of als C<--force --force> is gebruikt.  Als het bestand wordt
+aangepast en al een GPS-positie had maar nog geen I<XMP:TimeSource>,
+dan krijgt het een I<XMP:TimeSource> gelijk aan C<GPS>.  Als de
+GPS-positie nieuw is en door L</--location> gezet werd, dan krijgt
+I<XMP:TimeSource> de waarde C<User>.  Als de GPS-locatie uit een
+GPX-bestand kwam dan krijgt I<XMP:TimeSource> de waarde C<Other>.
+
+=head2 Back-ups
+
+Als een bestand (anders dan het logbestand en het
+cameratijdverschilbestand) aangepast gaat worden dan maakr imsync er
+eerst een back-up van als die back-up niet al bestaat.  De back-up
+heeft dezelfde naam maar met I<_original> er achtergezet.  Als de
+back-up niet gemaakt kan worden dan wordt het originele bestand niet
+aangepast.
+
+De L<Image::ExifTool>-module die door imsync gebruikt wordt om de
+metainformatie te schrijven maakt zelf ook een back-up voordat er iets
+geschreven wordt, en wist die back-up als er tijdens het schrijven
+geen problemen werden gevonden, maar de auteur van die module raadt
+aan om een (extra) back-up te maken.
+
+Als je tevreden bent met de aanpassingen dan kun je de back-up die
+door imsync werd gemaakt wissen, handmatig of via de
+L</--removebackups>-optie.  Gebruik de L</--restoreoriginals>-optie om
+originele bestanden te herstellen uit back-ups.
+
+Als je wilt dat imsync geen back-ups aanmaakt, en wilt vertrouwen op
+de tijdelijke back-ups die L<Image::ExifTool> al maakt, gebruik dan de
+L</--unsafe>-optie.
+
+=head2 Voortgangsmeldingen
+
+Voortgangsmeldingen worden naar de standaarduitvoer (vaak het scherm)
+geschreven en ook naar een logbestand.  Het standaardlogbestand is
+I<imsync.log> in de huidige map, maar een ander bestand kan worden
+opgegeven met de L</--logfile>-optie.
+
+Als het logbestand al bestaat, gebruik dan de L</--clearlog>-optie als
+je de oude inhoud wilt wissen.  Anders worden de nieuwe
+voortgangsmeldingen toegevoegd aan de oude.
+
+Als de L</--unsafe>-optie wordt gebruikt, dan wordt het logbestand
+gewist als imsync netjes ten einde komt.  Als er een serieus probleem
+optreedt waardoor imsync zijn taak niet kan volbrengen dan wordt het
+logbestand niet gewist.
+
+=head2 Voortgangsmeldingdetailniveau
+
+De L</--verbose>- en L</--follow>-opties bepalen hoeveel details de
+voortgangsmeldingen geven, behalve voor het eindrapport waarvan het
+detailniveau door de L</--reportlevel>-optie bepaald wordt.
+
+Met geen C<--verbose> of met C<--verbose 1> wordt alleen samenvattende
+informatie gegeven.
+
+Tel er 2 bij op om de originele metainformatie van de verwerkte
+bestanden te tonen.
+
+Tel er 4 bij op voor details van de bepaling van de uiteindelijke
+metainformatie voor alleen de bestanden waarvoor een aanpassing
+aangewezen is.
+
+Tel er 8 bij op voor details van de bepaling van de uiteindelijke
+metainformatie voor alle verwerkte bestanden.
+
+Tel er 16 bij op om de gelezen cameratijdverschillen te zien.
+
+Als je alleen voor bepaalde bestanden extra details wilt zien, gebruik
+dan de C<--follow>-optie om die bestanden aan te geven.
+Voortgangsmeldingen voor die bestanden worden gegeven alsof het
+voortgangsmeldingdetailniveau oneinding groot is, ongeacht welk niveau
+is ingesteld via C<--verbose>.
+
+=head2 Eindrapport
+
+Standaard worden de bestanden waarvoor aanpassing aangewezen is gemeld
+in het eindrapport.  Als je alle bestanden in het eindrapport wilt,
+gebruik dan L</--reportlevel 2>.  Als je geen eindrapport wilt,
+gebruik dan C<--reportlevel 0>.
+
+Het eindrapport ziet er ongeveer zo uit:
+
+  GEOMPF Cm Target Time               M Offset   c Offset File
+  ------|--|-------------------------|----------|--------|--------
+  -=-*-0 SO 2017-06-22T00:33:02+02:00 s  -29d7h.        0 DSC03741.JPG
+  -*+*-0 AP 2017-06-22T14:23:35+02:00 s -28d17h.      +2h IMG_0095.JPG
+
+De GEOMPF-kolommen tonen wat er gebeurt als C<--modify> wordt
+gebruikt, met respectievelijk (G) het GPS-tijdstip (I<GPSDateTime>),
+(E) het originele tijdstip uit de metainformatie
+(I<DateTimeOriginal>), (O) diverse metainformatievelden die niet onder
+een van de andere kolommen vallen, (M) het bewerkingstijdstip uit het
+bestandssysteem, en (P) de GPS-locatie (I<GPSLatitude>,
+I<GPSLongitude> en misschien I<GPSAltitude>).  De F-kolom toont welk
+L</--force>-niveau nodig is om het bestand aangepast te krijgen (0
+betekent geen C<--force>, 1 betekent C<--force>, en 2 betekent
+C<--force --force>).  In de andere kolommen betekent C<-> dat de
+metainformatie afwezig blijft.  Een C<=> betekent dat die
+metainformatie aanwezig was en ongewijzigd blijft.  Een C<*> betekent
+dat die metainformatie wordt aangepast.  Een C<+> betekent dat die
+metainformatie wordt toegevoegd.  Een C<!> betekent dat de
+metainformatie wordt verwijderd.
+
+Het Cm-veld identificeert de camera-ID met een afkorting die wordt
+uitgelegd in een tabel die voor het eindrapport staat.
+
+Het "Target Time"-veld toont het doeltijdstip in ISO8601-formaat
+inclusief tijdzone (als die bekend is).
+
+Het "M Offset"-veld toont hoeveel het bewerkingstijdstip in het
+bestandssysteem verschoven wordt, in eenheden van jaren (y), dagen
+(d), uren (h), minuten (m) en seconden (s).  Als de waarde moest
+worden afgebroken om in de beschikbare ruimte te passen dan eindigt de
+waarde met een punt (C<.>).  Bijvoorbeeld, C<-37d2h> betekent
+I<precies> −37 dagen en 2 uren, en C<-37d2h.> betekent dat de waarde
+eigenlijk ietsje groter was maar moest worden afgebroken.
+
+De letter aan het begin van het "M Offset"-veld zegt wat de bron van
+de doeltijd was, volgens een tabel die voor het eindrapport staat.
+
+Het "c Offset"-veld toont het verschil tussen de doeltijd en de
+I<CreateDate> uit de metainformatie, op vergelijkbare manier als in
+het "M Offset"-veld.  Bijvoorbeeld, C<+2h> betekent dat de doeltijd
+precies 2 uur later is dan de I<CreateDate>.
+
+Het "File"-veld identificeert het bestand, met net genoeg van de
+mapnamen om de waarde uniek te maken in de verzameling van verwerkte
+bestanden.
+
+=head2 Exporteer GPX
+
+De locatieinformatie uit (of voor) de verwerkte bestanden kan worden
+geëxporteert naar een GPX-bestand, zelfs als aanpassing van de
+verwerkte bestanden (met L</--modify>) niet is gevraagd.  Op deze
+manier kun je de locaties nakijken in een kaartenapplicatie voordat je
+ze naar de beeldbestanden laat schrijven.  Gebruik de
+L</--exportgpx>-optie om export van de locatieinformatie naar een
+bestand te vragen.  Als je een bestandsnaam achter de optie zet dan
+wordt de informatie naar dat bestand geëxporteert.  Anders wordt
+F<export.gpx> in de huidige map gebruikt.
+
+=head1 EINDWAARDE
+
+imsync geeft 0 terug als er geen aanpassingen meer nodig zijn voor de
+verwerkte bestanden, of 1 als er nog aanpassingen te doen zijn, of 2
+als er een probleem was waardoor het zijn werk niet kon afmaken.
+
+=head1 CONFIGURATIE
+
+imsync leest en schrijft een
+L<cameratijdverschilbestand|/Cameratijdverschilbestand> met informatie
+(in L<YAML|http://www.yaml.org>-formaat) over hoe de cameraklokken
+lopen ten opzichte van UTC.  Als er een bestand
+F<.imsync-cameraoffsets.yaml> in de huidige map bestaat dan wordt dat
+gebruikt als cameratijdverschilbestand.  Anders wordt een bestan met
+die naam in de thuismap van de gebruiker gebruikt, waarvoor de locatie
+van de thuismap wordt gelezen uit de C<HOME>-omgevingsvariabele.
+
+=head1 AFHANKELIJKHEDEN
+
+imsync gebruikt de volgende Perl modules die niet tot de kern van Perl
+behoren:
+
+=over
+
+=item
+
+L<IO::Interactive>
+
+=item
+
+L<Image::ExifTool> versie 10.14 of hoger
+
+=item
+
+L<Path::Class>
+
+=item
+
+L<Path::Iterator::Rule>
+
+=item
+
+L<Term::ProgressBar>
+
+=item
+
+L<XML::Twig>
+
+=item
+
+L<YAML::Any>
+
+=back
+
+=head1 AUTEUR
+
+Louis Strous E<lt>LS@quae.nlE<gt>.
+
+=head1 LICENTIE EN COPYRIGHT
+
+Copyright (c) 2018 Louis Strous.
+
+Dit programma is vrije software; je kunt het verspreiden en/of
+aanpassen onder dezelfde voorwaarden als Perl zelf.
+
+=cut
