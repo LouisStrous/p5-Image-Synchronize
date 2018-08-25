@@ -7,3 +7,9 @@ Revision history for Perl extension Image::Synchronize.
      FIX: --time with a timestamp or timerange for target was broken.
 
 1.2  2018-04-25
+
+     - FIX: Reject only GPS tags from the EXIF group (because they are
+       incomplete), instead of accepting only GPS tags from the
+       Composite group.  So now GPS tags from the XMP group are
+       accepted.
+

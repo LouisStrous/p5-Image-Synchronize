@@ -1533,12 +1533,12 @@ sub get_image_info {
         $value = Image::Synchronize::Timestamp->new($value);
       }
 
-      # for GPS tags we only accept those in the Composite group,
-      # because the ones in the EXIF group lack the N/S or E/W or +/-
-      # "sign".
+      # For GPS tags we reject those in the EXIF group because they
+      # lack the N/S or E/W or +/- "sign".  The corresponding tags in
+      # the Composite or XMP groups are complete and are acceptable.
       next
         if exists $gps_location_tags{$bare_tag}
-        and $group ne 'Composite';
+        and $group eq 'EXIF';
 
       $info->set( $group, $bare_tag, $value );
     }
