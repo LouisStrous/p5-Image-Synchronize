@@ -17,3 +17,5 @@ Revision history for Perl extension Image::Synchronize.
        version number, then suppress that change.
 
      - Report the number of non-zero modification time offset changes.
+
+     - Restrict search to depth 1 when looking for subdirectories.

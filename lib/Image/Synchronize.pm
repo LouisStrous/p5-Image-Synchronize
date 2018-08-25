@@ -3170,7 +3170,9 @@ sub resolve_files {
   return () unless @items;
   $options //= {};
   if ( not( $options->{recurse} ) ) {
-    $rule = $rule->clone->max_depth(1);    # no recursion
+    $rule = Path::Iterator::Rule->new
+      ->max_depth(1)            # no recursion
+      ->and($rule);
   }
   my @files;
   foreach my $item (@items) {
@@ -3188,12 +3190,20 @@ sub resolve_files {
 
       # seek directories matching the pattern
       my @subdirs =
-        Path::Iterator::Rule->new->directory->name( $f->basename )
-        ->all( $f->parent );
+        Path::Iterator::Rule->new
+          ->max_depth(1)
+          ->name( $f->basename )
+          ->directory
+          ->all( $f->parent );
       push @files, $rule->all(@subdirs) if @subdirs;
 
       # seek files matching the pattern
-      push @files, $rule->clone->name( $f->basename )->all( $f->parent );
+      push @files,
+        Path::Iterator::Rule->new
+          ->max_depth(1)
+          ->name( $f->basename )
+          ->and( $rule )
+          ->all( $f->parent );
     }
   }
 
