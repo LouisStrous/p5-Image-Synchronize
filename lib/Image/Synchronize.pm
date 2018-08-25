@@ -2890,6 +2890,7 @@ EOD
 
   my $min_offset;
   my $max_offset;
+  my $count_nonzero_offset = 0;
   foreach my $file (
     sort {
       timestamp_for_sorting( $self->{original_info}->{$a},
@@ -2981,6 +2982,7 @@ EOD
       );
     }
     if ($time_change) {
+      ++$count_nonzero_offset;
       $min_offset = $time_change
         if not( defined $min_offset )
         or $time_change < $min_offset;
@@ -2994,7 +2996,7 @@ EOD
   $max_offset //= 0;
   if ( $min_offset == $max_offset ) {
     if ($min_offset) {    # not equal to zero
-      log_message( "All non-zero offsets are equal to ",
+      log_message( "All $count_nonzero_offset non-zero offsets are equal to ",
         display_offset($min_offset), ".\n\n" );
     }
     else {
@@ -3003,7 +3005,7 @@ EOD
   }
   else {
     log_message(
-      "Non-zero offsets are between ",
+      "$count_nonzero_offset non-zero offsets are between ",
       display_offset($min_offset),
       " and ", display_offset($max_offset), ".\n"
     );

@@ -16,3 +16,4 @@ Revision history for Perl extension Image::Synchronize.
      - If the only thing that would be changed in a file is the imsync
        version number, then suppress that change.
 
+     - Report the number of non-zero modification time offset changes.
