@@ -1102,6 +1102,19 @@ sub determine_new_values_for_file {
 
   push @messages, $new_info->stringify(' ');
 
+  if (scalar(keys %changes) == 1
+      and exists $changes{ImsyncVersion}
+      and defined $info->get('ImsyncVersion')) {
+    # The only thing that changed is the ImsyncVersion value: the file
+    # already has that tag but the current version of imsync is newer
+    # than the one that modified the file last.  This is not a good
+    # reason to change the file, so we suppress that change.
+    %changes = ();
+    $min_force_for_change = 99;
+    $new_info->set('ImsyncVersion', $info->get('ImsyncVersion'));
+    push @messages, ' Only ImsyncVersion has changed -- suppressing.';
+  }
+
   my $result = 0;
   if ( $min_force_for_change < 99 ) {    # some changes
     if ( ( $extra_info->get('explicit_change') // 0 ) > 0

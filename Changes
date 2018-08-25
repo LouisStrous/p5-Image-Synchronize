@@ -13,3 +13,6 @@ Revision history for Perl extension Image::Synchronize.
        Composite group.  So now GPS tags from the XMP group are
        accepted.
 
+     - If the only thing that would be changed in a file is the imsync
+       version number, then suppress that change.
+
