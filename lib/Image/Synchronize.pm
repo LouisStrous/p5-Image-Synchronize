@@ -1,7 +1,5 @@
 package Image::Synchronize;
 
-# TODO: Prevent Thumbs.db files from being attempted to write to
-
 =head1 NAME
 
 Image::Synchronize - a module for synchronizing filesystem
@@ -486,6 +484,20 @@ sub delete_backups {
   $self;
 }
 
+#  @best_scorers = best_scorers(sub { ... }, @targets)
+#
+# Return the best-scoring items.  The code reference, when called for
+# a target, should return a numerical score.  The highest score among
+# the @targets is determined, and all elements of @targets that have
+# that highest score are returned.
+sub best_scorers {
+  my ($code, @targets) = @_;
+  my %score = map { $code->($_) } @targets;
+  my @order = sort { $score{$b} <=> $score{$a} } @targets;
+  my $bestscore = $score{ $order[0] };
+  return grep { $score{$_} == $bestscore } keys %score;
+}
+
 #    $ims->determine_new_values_for_all_files;
 #
 # Determines the proposed final values (target timestamp, location, and
@@ -558,12 +570,8 @@ EOD
         # prefer targets of which the beginning of the path looks
         # most like that of the current file
 
-        my %score =
-          map { $_ => length_of_common_prefix( $file, $_ ) } @targets;
-        my @order = sort { $score{$b} <=> $score{$a} } @targets;
-        my $bestscore = $score{ $order[0] };
-
-        @targets = grep { $score{$_} == $bestscore } keys %score;
+        @targets = best_scorers
+          ( sub { $_ => length_of_common_prefix( $file, $_ ) }, @targets);
       }
       if ( @targets > 1 ) {
 
@@ -582,6 +590,19 @@ EOD
         if (@matches) {
           @targets = @matches;
         }
+      }
+      if (@targets > 1) {
+        # prefer the one(s) with the beginning of the file name is
+        # most like that of the current file
+        my $b = file($file)->basename;
+        @targets = best_scorers
+          ( sub {
+              $_ => length_of_common_prefix( $b, file($_)->basename ) },
+            @targets);
+      }
+      if (@targets > 1) {
+        # apply lexicographic sort, so the results are predictable.
+        @targets = sort @targets;
       }
       $count_modified +=
         $self->determine_new_values_for_file( $file, $targets[0] );
