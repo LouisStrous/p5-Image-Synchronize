@@ -1539,12 +1539,6 @@ sub get_image_info {
     foreach my $tag ( sort keys %{$image_info} ) {
       my $group    = $self->backend->GetGroup($tag);
       my $bare_tag = $tag =~ s/ \(\d+\)$//r;          # omit index number if any
-      my $value    = $image_info->{$tag};
-      if ( exists $time_tags{$bare_tag}
-        or exists $time_tags{"$group:$bare_tag"} )
-      {                                               # it expresses a time
-        $value = Image::Synchronize::Timestamp->new($value);
-      }
 
       # For GPS tags we reject those in the EXIF group because they
       # lack the N/S or E/W or +/- "sign".  The corresponding tags in
@@ -1553,7 +1547,18 @@ sub get_image_info {
         if exists $gps_location_tags{$bare_tag}
         and $group eq 'EXIF';
 
-      $info->set( $group, $bare_tag, $value );
+      my $value    = $image_info->{$tag};
+
+      if ( exists $time_tags{$bare_tag}
+        or exists $time_tags{"$group:$bare_tag"} )
+      {                                               # it expresses a time
+        $value = Image::Synchronize::Timestamp->new($value);
+      }
+
+      if (defined $value) {
+        $info->set( $group, $bare_tag, $value );
+      } # otherwise $value was undefined, for example because a
+        # timestamp tag's value wasn't valid.
     }
   }
 
