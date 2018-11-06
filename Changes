@@ -10,8 +10,7 @@ Revision history for Perl extension Image::Synchronize.
 
      - FIX: Reject only GPS tags from the EXIF group (because they are
        incomplete), instead of accepting only GPS tags from the
-       Composite group.  So now GPS tags from the XMP group are
-       accepted.
+       Composite group.  Now GPS tags from the XMP group are accepted.
 
      - If the only thing that would be changed in a file is the imsync
        version number, then suppress that change.
@@ -19,3 +18,19 @@ Revision history for Perl extension Image::Synchronize.
      - Report the number of non-zero modification time offset changes.
 
      - Restrict search to depth 1 when looking for subdirectories.
+
+     - FIX: Invalid embedded timestamps weren't rejected in the proper
+       way, leading to Perl warnings about undefined variables.  Now
+       invalid embedded timestamps are rejected in the correct way.
+
+     - FIX: When assigning a timestamp via the file number, the
+       outcome could vary from one run to the next if there were
+       multiple source files with the same file number as the target.
+       Now the outcome is fully deterministic.
+
+1.3  2018-11-06
+
+     - Detect incomplete GPS information.  Some cameras, for example
+       that of the LG-H870, can record a GPS altitude (equal to 0) by
+       itself, without a GPS latitude and longitude, when the camera
+       doesn't know its location.

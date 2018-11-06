@@ -89,6 +89,10 @@ __END__
   # modify as needed, and report
   imsync --modify
 
+  # get help
+  imsync --help
+  imsync --man
+
 =head1 SUMMARY
 
   imsync [options] [path_patterns]
@@ -210,9 +214,9 @@ is interpreted as a separator between different argument values.
 The date must include 3 numbers (year, month, day), all separated by a
 dash C<-> or all by a colon C<:>.
 
-The time must include at least one and up to three numbers (hour,
-minute, second), separated by a colon C<:>.  Omitted final components
-are assumed equal to 0.
+The time is specified on a 24-hour clock and must include at least one
+and up to three numbers (hour, minute, second), separated by a colon
+C<:>.  Omitted final components are assumed equal to 0.
 
 The time zone offset designation, if specified, must follow the
 date/time specification without any intervening other text or
@@ -353,6 +357,12 @@ With two C<--force>, the GPS position is updated even if the
 I<XMP:TimeSource> tag is not present or is equal to C<GPS>.  This
 means the original GPS position that was embedded by a GPS receiver
 attached to the camera is lost.
+
+If the only thing that has changed is the version of imsync, then the
+corresponding change to I<XMP:ImsyncVersion> is suppressed.  In other
+words, if I<XMP:ImsyncVersion> is the only tag that needs a change,
+and if that tag was already in the file, then that change is
+suppressed.
 
 =head2 --help
 

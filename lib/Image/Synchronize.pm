@@ -77,7 +77,7 @@ use YAML::Any qw(
   LoadFile
 );
 
-our $VERSION = '1.2';
+our $VERSION = '1.3';
 
 my $CASE_TOLERANT;
 
@@ -515,7 +515,7 @@ sub determine_new_values_for_all_files {
   my @files_handle_by_number;
   my %files_for_image_numbers;
   my $count_modified    = 0;
-  my $count_needs_force = 0;
+  my %count_needs_force;
   foreach my $file (@files) {
     my $info = $self->{original_info}->{$file};
 
@@ -529,7 +529,12 @@ sub determine_new_values_for_all_files {
       my $modification_type = $self->determine_new_values_for_file($file);
 
       ++$count_modified    if $modification_type == 1;
-      ++$count_needs_force if $modification_type == 2;
+
+      my $extra_info = $self->{extra_info}->{$file};
+      if (defined($extra_info)) {
+        my $f = $extra_info->{min_force_for_change};
+        ++$count_needs_force{$f} if defined $f;
+      }
     }
     elsif ( defined $info->get('image_number') ) {
 
@@ -625,16 +630,20 @@ EOD
   $self->cleanup_progressbar($progressbar);
 
   log_message("$count_modified file(s) need modification.\n");
-  log_message(
-    "$count_needs_force file(s) need more --force for modification.\n")
-    if $count_needs_force;
+  log_message($count_needs_force{1} . " file(s) need --force for modification.\n")
+    if $count_needs_force{1};
+  log_message($count_needs_force{2} . " file(s) need --force --force for modification.\n")
+    if $count_needs_force{2};
+  log_message(" Use --verbose 4 to get more details.\n")
+    if scalar(keys %count_needs_force)
+    and ($self->option('verbose', 0) & 12) == 0;
 
   return $self;
 }
 
 # returns 0 if the file needs no modification, 1 if the file needs
-# modification (for the current level of force), or 2 if the file
-# needs more force if it is to be modified.
+# modification (for the current level of force), or 1 + minimum needed
+# force if the file needs more force if it is to be modified.
 sub determine_new_values_for_file {
   my ( $self, $file, $target_file ) = @_;
 
@@ -967,7 +976,7 @@ sub determine_new_values_for_file {
   # modification if the GPS location or timestamp have changed and
   # TimeSource was not set or was equal to 'GPS'.
 
-  my $gps_tags_count;
+  my $gps_location_tags_count;
   my $min_force_for_change = 99;
   my %changes;
   foreach my $tag (
@@ -977,7 +986,6 @@ sub determine_new_values_for_file {
     ImsyncVersion
     FileModifyDate
     GPSAltitude
-    GPSDateTime
     GPSLatitude
     GPSLongitude
     TimeSource
@@ -988,12 +996,14 @@ sub determine_new_values_for_file {
     my $old    = $info->get($tag);
     my $change = 1;
 
+    if ( (defined($gps_location_tags{$tag}))
+         and (defined($old) or defined($new)) ) {
+      ++$gps_location_tags_count;
+      next;                     # handle these separately
+    }
+
     if ( defined $old ) {
       if ( defined $new ) {
-        if ( $gps_location_tags{$tag} ) {
-          ++$gps_tags_count;
-          next;    # handle these separately
-        }
         if ( $new ne $old ) {
           push @messages, " $tag has changed.";
         }
@@ -1002,18 +1012,10 @@ sub determine_new_values_for_file {
         }
       }
       else {       # old but not new
-        if ( $gps_location_tags{$tag} ) {
-          ++$gps_tags_count;
-          next;    # handle these separately
-        }
         push @messages, " $tag has disappeared,";
       }
     }
     elsif ( defined $new ) {    # new but not old
-      if ( $gps_location_tags{$tag} or $tag eq 'GPSDateTime' ) {
-        ++$gps_tags_count;
-        next;                   # handle these separately
-      }
       push @messages, " $tag is new.";
     }
     else {                      # neither new nor old
@@ -1042,7 +1044,13 @@ sub determine_new_values_for_file {
     }
   }
 
-  if ($gps_tags_count) {
+  if ($gps_location_tags_count) {
+    # Some cameras, for example the LG-H870, can record a GPS altitude
+    # by itself, without a GPS latitude and longitude, when the camera
+    # doesn't know its location.  We treat those cases as if the GPS
+    # altitude wasn't there, but if the file gets modified anyway and
+    # get no new GPS position then we remove the troublesome and
+    # useless GPS altitude.
     my $change        = 1;
     my $old_pos_count = 0;
     my @old_pos       = map {
@@ -1061,7 +1069,8 @@ sub determine_new_values_for_file {
       $v
     } @gps_location_tags;
     my $distance = geo_distance( \@old_pos, \@new_pos );
-    if ( defined $distance ) {
+    if ( defined $distance ) {  # the GPS location was complete in old
+                                # and new
       if ( $distance >= 1 ) {
         my ( $value, $prefix ) = si_prefix($distance);
         push @messages, " GPS position has changed by $value ${prefix}m.";
@@ -1079,11 +1088,15 @@ sub determine_new_values_for_file {
       push @messages, " GPS position has disappeared,";
       $new_info->delete($_) foreach ( @gps_location_tags, 'GPSDateTime' );
     }
-    elsif ( $new_pos_count == 2 ) {
+    elsif ( $new_pos_count ) {
       push @messages, " GPS position is new.";
-    }
-    else {
-      push @messages, " GPS position was incomplete -- removing.";
+    } elsif ($old_pos_count == 0) {
+      # no old location and no new location and yet we got here.  Must
+      # be the case where the file contains a solitary GPS altitude.
+      push @messages, ' Solitary GPS altitude.';
+      $new_info->delete('GPSAltitude');
+    } else {
+      push @messages, ' GPS position is incomplete.';
       $new_info->delete($_) foreach ( @gps_location_tags, 'GPSDateTime' );
     }
     if ($change) {
@@ -1094,23 +1107,22 @@ sub determine_new_values_for_file {
       # --force level is at least 2.  Otherwise we assume that the old
       # GPS position (if any) was added by us in an earlier run; then
       # we can already modify it even if no --force is specified.
-      if ( ( $info->get('TimeSource') // 'GPS' ) eq 'GPS'
-        and defined $info->get('GPSDateTime') )
+      if ( ( $info->get('TimeSource') // 'GPS' ) eq 'GPS' )
       {
         $min_force_for_change = 2
           if $min_force_for_change > 2;
-        $changes{$_} = 2 foreach qw(GPSLongitude GPSLatitude GPSDateTime);
-        $changes{GPSAltitude} = 2
-          if $info->get('GPSAltitude')
-          or $new_info->get('GPSAltitude');
+        foreach my $tag (@gps_location_tags, 'GPSDateTime') {
+          $changes{$tag} = 2
+          if stringify($info->get($tag)) ne stringify($new_info->get($tag));
+        }
       }
       else {
         $min_force_for_change = 0
           if $min_force_for_change > 0;
-        $changes{$_} = 0 foreach qw(GPSLongitude GPSLatitude GPSDateTime);
-        $changes{GPSAltitude} = 0
-          if $info->get('GPSAltitude')
-          or $new_info->get('GPSAltitude');
+        foreach my $tag (@gps_location_tags, 'GPSDateTime') {
+          $changes{$tag} = 0
+            if stringify($info->get($tag)) ne stringify($new_info->get($tag));
+        }
       }
     }
   }
@@ -1149,8 +1161,8 @@ sub determine_new_values_for_file {
     }
     else {
       push @messages, ' Modification of this file is suppressed, needs --force'
-        . ( $min_force_for_change > 1 ? " $min_force_for_change" : '' ) . '.';
-      $result = 2;
+        . ( $min_force_for_change > 1 ? ' --force' : '' ) . '.';
+      $result = $min_force_for_change + 1;
     }
   }
   else {
@@ -1160,8 +1172,8 @@ sub determine_new_values_for_file {
   # if verbose & 4 then only print if needs_modification
   # if verbose & 8 then print even if not needs_modification
   # otherwise don't print
-  my $bitflag = 12;
-  $bitflag &= ~4 unless $extra_info->get('needs_modification');
+  my $bitflag = 8;
+  $bitflag |= 4 if $extra_info->get('needs_modification');
   log_message( $bitflag, { name => $file }, join( "\n", @messages ) . "\n" );
 
   return $result;
@@ -1455,14 +1467,23 @@ following fixed set of tags:
 =over
 
 =item CameraID
+
 =item ImsyncVersion
+
 =item FileModifyDate
+
 =item ImageWidth
+
 =item Make
+
 =item MIMEType
+
 =item Model
+
 =item QuickTime:CreateDate
+
 =item SerialNumber
+
 =item TimeSource
 
 =back
@@ -1893,7 +1914,7 @@ EOD
         $info->set( 'fallback_camera_id', $fallback_camera_id );
       }
 
-      ++$count_image_files if has_embedded_timestamp($info);
+      ++$count_image_files if is_image_or_movie($info);
       ++$count_gps_times   if defined $info->{GPSDateTime};
 
       $self->{original_info}->{$file} = $info;
@@ -1906,7 +1927,7 @@ EOD
 
   log_message("Found $count_gps_track_files GPS track file(s).\n")
     if $count_gps_track_files;
-  log_message("Found $count_image_files image file(s) with embedded creation timestamp.\n");
+  log_message("Found $count_image_files image file(s).\n");
   log_message("$count_gps_times file(s) have a GPS timestamp.\n");
   return $self;
 }
@@ -2147,7 +2168,10 @@ sub modify_file {
           # Image::ExifTool doesn't modify any file name byte values,
           # either.
           my @warnings = split /\n/, $warning;
-          @warnings = grep { !/FileName encoding not specified/ } @warnings;
+          @warnings = grep { !/
+                                FileName[ ]encoding[ ]not[ ]specified
+                              |Maker[ ]notes[ ]could[ ]not[ ]be[ ]parsed
+                              /x } @warnings;
           if (@warnings) {
             $warning = join( "\n", @warnings );
             log_warn(" Writing '$file' succeeded with warning: $warning\n");
@@ -2520,6 +2544,10 @@ sub process_user_times {
 "Cannot apply --time clock time for $file because it lacks an embedded CreateDate.\n"
         );
       }
+    }
+    elsif ( $rhs =~ /^(\d+-\d+-\d+\D\d+:\d+(?::\d+)?)$/
+            && defined($value = Image::Synchronize::Timestamp->new( $rhs )) ) {
+      # clock date/time
     }
     else {                                        # path end
       my @files = keys %{ $self->{original_info} };
@@ -3202,11 +3230,13 @@ sub resolve_files {
   }
   my @files;
   foreach my $item (@items) {
+    my @extra;
     if ( -d $item ) {
-      push @files, $rule->all($item);
+      @extra = $rule->all($item);
+      log_message("No matches for $item.\n") unless @extra;
     }
     elsif ( -f $item ) {
-      push @files, perlish_path($item);
+      @extra = (perlish_path($item));
     }
     else {
       # the item was not found as a literal name; maybe it is a file
@@ -3221,16 +3251,19 @@ sub resolve_files {
           ->name( $f->basename )
           ->directory
           ->all( $f->parent );
-      push @files, $rule->all(@subdirs) if @subdirs;
+      @extra = $rule->all(@subdirs) if @subdirs;
 
       # seek files matching the pattern
-      push @files,
+      push @extra,
         Path::Iterator::Rule->new
           ->max_depth(1)
           ->name( $f->basename )
           ->and( $rule )
           ->all( $f->parent );
+
+      log_message("No matches for $item.\n") unless @extra;
     }
+    push @files, @extra;
   }
 
   # remove duplicates, and convert to Perl-style paths
@@ -3390,6 +3423,12 @@ sub si_prefix {
   return wantarray
     ? ( $numeral, $prefix )
     : $numeral . ( $prefix ? " $prefix" : '' );
+}
+
+sub stringify {
+  my ($thing) = @_;
+  return "$thing" if defined $thing;
+  return '';
 }
 
 #  $timestamp = timestamp_for_sorting($info, $new_info);
