@@ -50,3 +50,11 @@ Revision history for Perl extension Image::Synchronize.
      - FIX: The 'P' (from GEOMPF) indicator in the report sometimes
        indicated change ('*') when it was too small to have effect on
        the embedded position.
+
+1.4.1 2019-06-08
+
+      - FIX RT bug #127260 by adusting Perl version requirements.
+
+      - FIX RT bug #127261 by adjusting test.
+
+      - FIX RT bug #129106 by adjusting test.
