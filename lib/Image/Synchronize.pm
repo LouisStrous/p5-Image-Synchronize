@@ -27,7 +27,7 @@ Louis Strous, E<lt>imsync@quae.nl<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2018 by Louis Strous
+Copyright (C) 2018-2019 by Louis Strous
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.26.2 or,
@@ -77,7 +77,7 @@ use YAML::Any qw(
   LoadFile
 );
 
-our $VERSION = '1.3';
+our $VERSION = '1.4';
 
 my $CASE_TOLERANT;
 
@@ -519,7 +519,7 @@ sub determine_new_values_for_all_files {
   foreach my $file (@files) {
     my $info = $self->{original_info}->{$file};
 
-    if ( has_embedded_timestamp($info) ) {
+    if ( $self->has_useful_timestamp($file, $info) ) {
 
       # remember which files with embedded timestamps have which image
       # number
@@ -532,8 +532,8 @@ sub determine_new_values_for_all_files {
 
       my $extra_info = $self->{extra_info}->{$file};
       if (defined($extra_info)) {
-        my $f = $extra_info->{min_force_for_change};
-        ++$count_needs_force{$f} if defined $f;
+        my $f = $extra_info->get('min_force_for_change');
+        ++$count_needs_force{$f} if  $f;
       }
     }
     elsif ( defined $info->get('image_number') ) {
@@ -610,7 +610,12 @@ EOD
         @targets = sort @targets;
       }
       $count_modified +=
-        $self->determine_new_values_for_file( $file, $targets[0] );
+        ($self->determine_new_values_for_file( $file, $targets[0] ) == 1);
+      my $extra_info = $self->{extra_info}->{$file};
+      if (defined($extra_info)) {
+        my $f = $extra_info->get('min_force_for_change');
+        ++$count_needs_force{$f} if  $f;
+      }
     }
     else {
       log_message(
@@ -631,13 +636,9 @@ EOD
 
   log_message("$count_modified file(s) need modification.\n");
   log_message($count_needs_force{1} . " file(s) need --force for modification.\n")
-    if $count_needs_force{1};
+    if $count_needs_force{1} && $self->option('force', 0) < 1;
   log_message($count_needs_force{2} . " file(s) need --force --force for modification.\n")
-    if $count_needs_force{2};
-  log_message(" Use --verbose 4 to get more details.\n")
-    if scalar(keys %count_needs_force)
-    and ($self->option('verbose', 0) & 12) == 0;
-
+    if $count_needs_force{2} && $self->option('force', 0) < 2;
   return $self;
 }
 
@@ -679,7 +680,7 @@ sub determine_new_values_for_file {
   }
 
   # determine final camera ID.
-  if ( has_embedded_timestamp($info) ) {
+  if ( is_image_or_movie($info) ) {
     my $camera_id = $self->user_camera_id($file);
     if ( defined $camera_id ) {
       push @messages, ' Camera ID set by user (--cameraid).';
@@ -822,7 +823,7 @@ sub determine_new_values_for_file {
     }
     $extra_info->set( 'timesource_letter', $timesource_letter );
     $new_info->set( 'TimeSource', $timesource )
-      if has_embedded_timestamp($info);
+      if is_image_or_movie($info);
 
     $target_timestamp->set_to_local_timezone;
 
@@ -849,7 +850,7 @@ sub determine_new_values_for_file {
       }
     }
 
-    if ( has_embedded_timestamp($info) ) {
+    if ( is_image_or_movie($info) ) {
 
       my $position = $self->repository('user_locations')->{$file};
       if ( defined $position ) {
@@ -859,7 +860,7 @@ sub determine_new_values_for_file {
         not( $info->get('GPSDateTime') )    # none yet
         or (
           ( $info->get('TimeSource') // 'GPS' ) ne 'GPS'    # not original
-          and $self->option( 'force', 0 ) >= 2
+            or $self->option( 'force', 0 ) >= 2             # or force is at least 2
         )
         )
       {
@@ -902,13 +903,23 @@ sub determine_new_values_for_file {
         }
       }
       if ( defined $position ) {
-        $new_info->set( 'GPSLatitude',  $position->[0] );
-        $new_info->set( 'GPSLongitude', $position->[1] );
-        $new_info->set( 'GPSAltitude',  $position->[2] )
-          if defined $position->[2];
-        $new_info->set( 'GPSDateTime', $target_timestamp );
-        croak "Expected new TimeSource to have been set already\n"
-          unless defined $new_info->get('TimeSource');
+        if (@{$position}) {
+          foreach my $ix (0..$#gps_location_tags) {
+            my $v = $info->get($gps_location_tags[$ix]);
+            $new_info->set( $gps_location_tags[$ix],  $position->[$ix] )
+              if defined($position->[$ix]) and (not(defined $v) or $position->[$ix] != $v);
+          }
+          my $v = $info->get('GPSDateTime');
+          $new_info->set( 'GPSDateTime', $target_timestamp )
+            if not(defined $v) or $target_timestamp != $v;
+          croak "Expected new TimeSource to have been set already\n"
+            unless defined $new_info->get('TimeSource');
+        } else {                # remove position
+          foreach my $ix (0..$#gps_location_tags) {
+            $new_info->delete( $gps_location_tags[$ix] );
+          }
+          $new_info->delete( 'GPSDateTime' );
+        }
       }
     }
 
@@ -940,7 +951,7 @@ sub determine_new_values_for_file {
     # then we must also have a TimeSource.
   }
 
-  if ( has_embedded_timestamp($info) ) {
+  if ( is_image_or_movie($info) ) {
     $new_info->set( 'DateTimeOriginal', $new_info->get('FileModifyDate') );
     $new_info->set( 'ImsyncVersion',    $VERSION );
 
@@ -955,7 +966,7 @@ sub determine_new_values_for_file {
 
     # We want to store DateTimeOriginal with a timezone, which means
     # we must put it in the XMP group, because DateTimeOriginal in the
-    # default Exif group has not room for a timezone.
+    # default Exif group has no room for a timezone.
     {
       my $dto = $new_info->get('DateTimeOriginal');
       $new_info->set( 'XMP', 'DateTimeOriginal', $dto )
@@ -1050,7 +1061,7 @@ sub determine_new_values_for_file {
     # doesn't know its location.  We treat those cases as if the GPS
     # altitude wasn't there, but if the file gets modified anyway and
     # get no new GPS position then we remove the troublesome and
-    # useless GPS altitude.
+    # to us useless GPS altitude.
     my $change        = 1;
     my $old_pos_count = 0;
     my @old_pos       = map {
@@ -1071,7 +1082,7 @@ sub determine_new_values_for_file {
     my $distance = geo_distance( \@old_pos, \@new_pos );
     if ( defined $distance ) {  # the GPS location was complete in old
                                 # and new
-      if ( $distance >= 1 ) {
+      if ( $distance ) {
         my ( $value, $prefix ) = si_prefix($distance);
         push @messages, " GPS position has changed by $value ${prefix}m.";
         $extra_info->set( 'position_change', $distance );
@@ -1126,7 +1137,6 @@ sub determine_new_values_for_file {
       }
     }
   }
-  $extra_info->set( 'min_force_for_change', $min_force_for_change );
 
   {
     my $camera_id = $new_info->get('CameraID');
@@ -1147,6 +1157,8 @@ sub determine_new_values_for_file {
     $new_info->set('ImsyncVersion', $info->get('ImsyncVersion'));
     push @messages, ' Only ImsyncVersion has changed -- suppressing.';
   }
+
+  $extra_info->set( 'min_force_for_change', $min_force_for_change );
 
   my $result = 0;
   if ( $min_force_for_change < 99 ) {    # some changes
@@ -1420,8 +1432,8 @@ sub geo_distance {
 
   # Image::Exiftool stores longitude and latitude with a resolution of
   # 0.01 seconds of arc, and altitude with a resolution of 0.01 m, so
-  # there is no point reporting a distance that is due to a difference
-  # of less than that resolution.
+  # it is not useful to report a difference that is smaller than that
+  # resolution.
 
   my @pos1_r = @{$pos1};
   @pos1_r[ 0 .. 1 ] = map { floor( $_ * 360000 + 0.5 ) } @pos1_r[ 0 .. 1 ];
@@ -1694,6 +1706,12 @@ sub has_embedded_timestamp {
   return 0;
 }
 
+sub has_useful_timestamp {
+  my ($self, $file, $image_info) = @_;
+  return ( has_embedded_timestamp($image_info)
+           || defined($self->repository('user_times')->{$file}) );
+}
+
 # identify @files that match the $pattern.  The match is case
 # sensitive, except on case-insensitive operating systems.
 sub identify_files {
@@ -1884,7 +1902,7 @@ EOD
       $info->set( 'supposedly_utc', 1 ) if is_supposedly_utc($info);
 
       # determine the camera ID
-      {
+      if (is_image_or_movie($info)) {
         my $camera_id = $info->get('CameraID');    # embedded camera ID
         if ( defined $camera_id ) {
 
@@ -1912,9 +1930,10 @@ EOD
           ++$fallback_to_camera_id->{$fallback_camera_id}->{$camera_id};
         }
         $info->set( 'fallback_camera_id', $fallback_camera_id );
+
+        ++$count_image_files;
       }
 
-      ++$count_image_files if is_image_or_movie($info);
       ++$count_gps_times   if defined $info->{GPSDateTime};
 
       $self->{original_info}->{$file} = $info;
@@ -2456,28 +2475,33 @@ sub process_user_locations {
   my ($self) = @_;
   my $action_cref = sub {
     my ( $rhs, $file ) = @_;
-    my @sources = identify_files( $rhs, keys %{ $self->{original_info} } );
-    if ( @sources > 1 ) {
-      log_warn("--location RHS '$rhs' matches more than one file; ignored.\n");
-      return;
-    }
-    elsif ( @sources == 0 ) {    # is it a location?
-      my ( $latitude, $longitude, $altitude ) = split /,/, $rhs;
-      $latitude  = parse_coordinate($latitude);
-      $longitude = parse_coordinate($longitude);
-      if ( defined($latitude) and defined($longitude) ) {
-        return [ $latitude, $longitude, add_maybe($altitude) ];
+    my @sources;
+    if ($rhs) {
+      @sources = identify_files( $rhs, keys %{ $self->{original_info} } );
+      if ( @sources > 1 ) {
+        log_warn("--location RHS '$rhs' matches more than one file; ignored.\n");
+        return;
       }
-    }
-    if ( @sources == 1 ) {
-      my $source_info = $self->{original_info}->{ $sources[0] };
-      if ( defined $source_info ) {
-        return [
-          $source_info->get('GPSLatitude'),
-          $source_info->get('GPSLongitude'),
-          add_maybe( $source_info->get('GPSAltitude') )
-        ];
+      elsif ( @sources == 0 ) {    # is it a location?
+        my ( $latitude, $longitude, $altitude ) = split /,/, $rhs;
+        $latitude  = parse_coordinate($latitude);
+        $longitude = parse_coordinate($longitude);
+        if ( defined($latitude) and defined($longitude) ) {
+          return [ $latitude, $longitude, add_maybe($altitude) ];
+        }
       }
+      if ( @sources == 1 ) {
+        my $source_info = $self->{original_info}->{ $sources[0] };
+        if ( defined $source_info ) {
+          return [
+                  $source_info->get('GPSLatitude'),
+                  $source_info->get('GPSLongitude'),
+                  add_maybe( $source_info->get('GPSAltitude') )
+                ];
+        }
+      }
+    } else {                    # empty rhs -- reset position
+      return [];
     }
     log_warn("Could not resolve --location RHS '$rhs'.\n");
     return;
@@ -2991,9 +3015,22 @@ EOD
 
     # P
     {
-      my $letter = report_letter( 'GPSLatitude', $info, $new_info );
-      if ( $letter eq '=' ) {
-        $letter = '*' if $extra_info->get('position_change');
+      my $letter;
+      if ($extra_info->get('position_change')) {
+        # position was present in old and new, and the new position is
+        # sufficiently different that the difference shows up in the
+        # EXIF tags
+        $letter = '*';
+      } else {
+        # a position wasn't present in old or new, or it was present
+        # in both and hasn't changed significantly.  The same then
+        # goes for any one of the components.
+        $letter = report_letter( 'GPSLatitude', $info, $new_info );
+        if ($letter eq '*') {
+          # the latitude is different but not by enough to show up in
+          # the EXIF tag after writing.  Mark as the same.
+          $letter = '=';
+        }
       }
       log_message($letter);
     }
@@ -3236,7 +3273,8 @@ sub resolve_files {
       log_message("No matches for $item.\n") unless @extra;
     }
     elsif ( -f $item ) {
-      @extra = (perlish_path($item));
+      my $f = file($item);
+      @extra = $rule->clone->max_depth(1)->name($f->basename)->all($f->parent);
     }
     else {
       # the item was not found as a literal name; maybe it is a file
