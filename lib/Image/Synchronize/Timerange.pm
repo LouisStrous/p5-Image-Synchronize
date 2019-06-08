@@ -558,7 +558,7 @@ sub add {
   return $result;
 }
 
-=stringify
+=head2 stringify
 
   $text = $r->stringify;
   $text = "$r";

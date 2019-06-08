@@ -79,7 +79,7 @@ use YAML::Any qw(
   LoadFile
 );
 
-our $VERSION = '1.4';
+our $VERSION = '1.4.2';
 
 my $CASE_TOLERANT;
 
@@ -1513,9 +1513,8 @@ C<"DateTimeOriginal">).
 
 If the ImageWidth tag is present, then the file is considered to be an
 image, and then the returned hash map also includes the effective
-camera ID (L</camera_id>), as the value for key
-C<effective_camera_id>.  The ImageWidth tag is omitted from the hash
-map.
+camera ID, as the value for key C<effective_camera_id>.  The
+ImageWidth tag is omitted from the hash map.
 
 QuickTime images/movies (recognized by there being a
 C<QuickTime:CreateDate> tag) get '|U' appended to their effective

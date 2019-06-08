@@ -1,10 +1,38 @@
 Revision history for Perl extension Image::Synchronize.
 
-1.0  2018-08-02
-     First public version.
+1.4.2 2019-06-08
+      - FIX some POD errors.
 
-1.1  2018-08-24
-     FIX: --time with a timestamp or timerange for target was broken.
+1.4.1 2019-06-08
+
+      - FIX RT bug #127260 by adusting Perl version requirements.
+
+      - FIX RT bug #127261 by adjusting test.
+
+      - FIX RT bug #129106 by adjusting test.
+
+1.4 2019-06-08
+
+     - Make --time recognize complete timestamps (with date and time).
+
+     - Report the minimum level of force needed to modify each file.
+
+     - A timestamp indicated through --time is as useful as an
+       embedded timestamp.
+
+     - Enable removal of location information through
+       --location TARGET=
+
+     - FIX: The 'P' (from GEOMPF) indicator in the report sometimes
+       indicated change ('*') when it was too small to have effect on
+       the embedded position.
+
+1.3  2018-11-06
+
+     - Detect incomplete GPS information.  Some cameras, for example
+       that of the LG-H870, can record a GPS altitude (equal to 0) by
+       itself, without a GPS latitude and longitude, when the camera
+       doesn't know its location.
 
 1.2  2018-04-25
 
@@ -28,33 +56,8 @@ Revision history for Perl extension Image::Synchronize.
        multiple source files with the same file number as the target.
        Now the outcome is fully deterministic.
 
-1.3  2018-11-06
+1.1  2018-08-24
+     FIX: --time with a timestamp or timerange for target was broken.
 
-     - Detect incomplete GPS information.  Some cameras, for example
-       that of the LG-H870, can record a GPS altitude (equal to 0) by
-       itself, without a GPS latitude and longitude, when the camera
-       doesn't know its location.
-
-1.4 2019-06-08
-
-     - Make --time recognize complete timestamps (with date and time).
-
-     - Report the minimum level of force needed to modify each file.
-
-     - A timestamp indicated through --time is as useful as an
-       embedded timestamp.
-
-     - Enable removal of location information through
-       --location TARGET=
-
-     - FIX: The 'P' (from GEOMPF) indicator in the report sometimes
-       indicated change ('*') when it was too small to have effect on
-       the embedded position.
-
-1.4.1 2019-06-08
-
-      - FIX RT bug #127260 by adusting Perl version requirements.
-
-      - FIX RT bug #127261 by adjusting test.
-
-      - FIX RT bug #129106 by adjusting test.
+1.0  2018-08-02
+     First public version.
