@@ -1,5 +1,7 @@
 package Image::Synchronize;
 
+use v5.13.2;
+
 =head1 NAME
 
 Image::Synchronize - a module for synchronizing filesystem

@@ -14,6 +14,8 @@ The module provides the following methods:
 use warnings;
 use strict;
 
+use v5.10.0;
+
 use Carp;
 use Image::Synchronize::Timestamp;
 use Scalar::Util qw(

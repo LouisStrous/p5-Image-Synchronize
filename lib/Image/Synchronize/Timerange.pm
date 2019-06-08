@@ -1,5 +1,7 @@
 package Image::Synchronize::Timerange;
 
+use v5.10.0;
+
 =head1 NAME
 
 Image::Synchronize::Timerange - a timestamp range class

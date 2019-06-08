@@ -3,6 +3,8 @@ package Image::Synchronize::GroupedInfo;
 use warnings;
 use strict;
 
+use v5.10.0;
+
 use overload '""' => \&stringify;
 
 use Carp;
