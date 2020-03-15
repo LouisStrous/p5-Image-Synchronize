@@ -79,7 +79,10 @@ use YAML::Any qw(
   LoadFile
 );
 
-our $VERSION = 'v1.4.3';
+# always use x.yyy version numbering, so that string comparison and
+# numeric comparison give the same ordering, to avoid trouble due to
+# different ways of interpreting version numbers.
+our $VERSION = '2.000';
 
 my $CASE_TOLERANT;
 
