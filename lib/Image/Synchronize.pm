@@ -79,7 +79,7 @@ use YAML::Any qw(
   LoadFile
 );
 
-our $VERSION = '1.4.2';
+our $VERSION = 'v1.4.3';
 
 my $CASE_TOLERANT;
 
