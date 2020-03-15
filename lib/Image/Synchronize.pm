@@ -2017,9 +2017,9 @@ my %convert_for_writing = (
   GPSLatitude => sub {
     my ( $tag, $in, $out ) = @_;
 
-    # don't set latitude to abs($in).  If the latitude is writting to
-    # XMP rather than EXIF, then there is no GPSLatitudeRef so then
-    # the sign on GPSLatitude is needed.
+    # don't set coordinates to abs($in).  If the coordinate is
+    # writting to XMP rather than EXIF, then there is no GPSxRef so
+    # then the sign on GPSx is needed.
     $out->{"${tag}#"} = $in;
     $out->{"${tag}Ref#"} = ( $in > 0 ) ? 'N' : 'S';
   },

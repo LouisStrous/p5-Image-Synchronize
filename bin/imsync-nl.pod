@@ -16,6 +16,10 @@
   # pas aan (als nodig) en rapporteer
   imsync --modify
 
+  # krijg hulp
+  imsync --help
+  imsync --man
+
 =head1 SAMENVATTING
 
   imsync [opties] [bestandspadpatronen]
@@ -301,6 +305,12 @@ I<XMP:TimeSource>-sleutel ontbreekt in de metainformatie of een waarde
 heeft gelijk aan C<GPS>.  Dit betekent dat de originele GPS-positie
 die door de GPS-ontvanger van de camera werd opgeslagen verloren gaat.
 
+Als het enige dat veranderde de imsync-versie is, dan wordt
+I<XMP:ImsyncVersion> niet aangepast.  Anders gezegd: Als
+I<XMP:ImsyncVersion> de enige sleutel is die aangepast moet worden en
+als die sleutel al in het bestand zit dan wordt die aanpassing
+onderdrukt.
+
 =head2 --help
 
   --help
@@ -320,10 +330,13 @@ Het doel mag een gedeeltelijke padnaam zijn of een tijdstip of een
 tijdperiode.
 
 De geografische informatie mag worden aangegeven als een gedeeltelijke
-padnaam of als een verzameling geografische coördinaten.  Als het een
-gedeeltelijke padnaam is dan moet het bij precies één bestand horen en
-dan wordt de geografische informatie uit dat bestand naar het
-doelbestand gekopieerd.
+padnaam, of een verzameling geografische coördinaten, of als een lege
+waarde.  Als het een gedeeltelijke padnaam is dan moet het bij precies
+één bestand horen en dan wordt de geografische informatie uit dat
+bestand naar het doelbestand gekopieerd.
+
+Als het een lege waarde is dan wordt de huidige locatie aangemeld voor
+verwijdering.
 
 De verzameling geografische coördinaten omvat de geografische
 breedtegraad en lengtegraad in graden, en naar keuze ook de hoogte in
@@ -976,12 +989,12 @@ aangewezen als het afgeleide doeltijdstip afwijkt van het
 bewerkingstijdstip dat voor het bestand geregistreerd is in het
 bestandssysteem.
 
-Aanpassing is dan ook aangewezen als de GPS-locatie met tenminste 1
-meter veranderd is, maar alleen als de originele GPS-locatie door
-imsync was berekend (I<XMP:TimeSource> was gezet en ongelijk aan
-C<GPS>).  We noemen zo'n GPS-positie I<flexibel>.  We willen niet te
-gemakkelijk een GPS-positie verliezen die door de originele camera in
-de metainformatie van het bestand werd geschreven.
+Aanpassing is dan ook aangewezen als de GPS-locatie is veranderd, maar
+alleen als de originele GPS-locatie door imsync was berekend
+(I<XMP:TimeSource> was gezet en ongelijk aan C<GPS>).  We noemen zo'n
+GPS-positie I<flexibel>.  We willen niet te gemakkelijk een
+GPS-positie verliezen die door de originele camera in de
+metainformatie van het bestand werd geschreven.
 
 Als C<--force> gebruikt wordt, dan is aanpassing ook aangewezen als
 een of meer van I<XMP:CameraID>, I<DateTimeOriginal>,
