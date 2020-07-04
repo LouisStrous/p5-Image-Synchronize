@@ -1,11 +1,9 @@
-#!/usr/bin/perl -w
-use strict;
-use warnings;
-
-use Image::Synchronize::Timestamp;
+#!/usr/bin/perl
+use Modern::Perl;
 use Scalar::Util qw(refaddr);
 use Test::More;
 use Time::Local qw(timegm);
+use Image::Synchronize::Timestamp;
 
 sub parse_components_ {
   Image::Synchronize::Timestamp::parse_components_(@_);
@@ -75,6 +73,26 @@ foreach my $test (
     in         => '04',
     components => [ undef, undef, undef, 4, undef, undef, undef ]
   },
+  {
+    in         => '-04:05:06',
+    components => [ undef, undef, undef, -4, -5, -6, undef ]
+  },
+  {
+    in         => '-04:05:06-07:08',
+    components => [ undef, undef, undef, -4, -5, -6, -7 * 3600 - 8 * 60 ]
+  },
+  {
+    in         => '-04:05:06+07',
+    components => [ undef, undef, undef, -4, -5, -6, 7 * 3600 ]
+  },
+  {
+    in         => '-04:05',
+    components => [ undef, undef, undef, -4, -5, undef, undef ]
+  },
+  {
+    in         => '-04',
+    components => [ undef, undef, undef, -4, undef, undef, undef ]
+  },
   )
 {
   is_deeply( [ parse_components_( $test->{in} ) ],
@@ -121,6 +139,18 @@ foreach my $test (
   {
     in  => '2001-02-03T04+01',
     out => '2001-02-03T04:00:00+01:00'
+  },
+  {
+    in  => '04:05:06+07:08:09',
+    out => '1970-01-01T04:05:06+07:08:09'
+  },
+  {
+    in  => '-04:05:06+07:08:09',
+    out => '1969-12-31T19:54:54+07:08:09'
+  },
+  {
+    in  => '-04:05:06-07:08:09',
+    out => '1969-12-31T19:54:54-07:08:09'
   },
   )
 {
@@ -209,9 +239,31 @@ $et2 = Image::Synchronize::Timestamp->new('2012-03-04T20:12:14+02:00');
 is( $et2 - $et, 4 * 3600, 'difference two timezones' );
 
 $et3 = $et2 + 20;
-is( "$et3", '2012:03:04 20:12:34+02:00', 'add scalar' );
+is( "$et3", '2012:03:04 20:12:34+02:00', 'add scalar to timestamp' );
 $et3 = $et2 - 20;
-is( "$et3", '2012:03:04 20:11:54+02:00', 'subtract scalar' );
+is( "$et3", '2012:03:04 20:11:54+02:00', 'subtract scalar from timestamp' );
+
+# Test timestamps without dates
+
+$et4 = Image::Synchronize::Timestamp->new('03:04:05+06:07');
+is( $et4->display_time, '+03:04:05+06:07', 'no date');
+is( $et4->time_local, 3*3600 + 4*60 + 5, 'no date  local time');
+is( $et4->offset_from_utc, 6*3600 + 7*60, 'no date  timezone');
+is( $et4->time_utc, (3-6)*3600 + (4-7)*60 + 5, 'no date UTC');
+$et4 = -$et4;
+is( $et4->display_time, '-03:04:05+06:07', 'negative' );
+$et3 = $et4 + 20;
+is( $et3->display_time, '-03:03:45+06:07', 'date plus scalar' );
+$et3 = 20 + $et4;
+is( $et3->display_time, '-03:03:45+06:07', 'scalar plus date' );
+$et3 = $et4 - 20;
+is( $et3->display_time, '-03:04:25+06:07', 'date minus scalar' );
+$et3 = 20 - $et4;
+is( $et3->display_time, '+03:04:25+06:07', 'scalar minus date' );
+$et3 = Image::Synchronize::Timestamp->new('-03:04:05+06:07');
+is( $et3->display_time, '-03:04:05+06:07', 'negative' );
+
+# End of tests without dates
 
 foreach my $test (
   [ '2012-03-04T05:06:07',       '2012-03-04T05:06:07' ],

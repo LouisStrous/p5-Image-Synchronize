@@ -1,6 +1,6 @@
 package Image::Synchronize::Timestamp;
 
-use v5.10.0;
+use Modern::Perl;
 
 =head1 NAME
 
@@ -18,25 +18,51 @@ Image::Synchronize::Timestamp - a timestamp class
   $t = Image::Synchronize::Timestamp->new('2010-06-27T17:44:12+03:00');
 
   # or without timezone offset
-  $t2 = Image::Synchronize::Timestamp->new('2010:06:27 17:50:00');
+  $t = Image::Synchronize::Timestamp->new('2010:06:27 17:50:00');
+
+  # fewer time components
+  $t = Image::Synchronize::Timestamp->new('2010:06:27 17:50');
+  $t = Image::Synchronize::Timestamp->new('2010:06:27 17+03');
+
+  # or without the date
+  $t = Image::Synchronize::Timestamp->new('17:44:12+03:00');
+  $t = Image::Synchronize::Timestamp->new('17:44+03');
+  $t = Image::Synchronize::Timestamp->new('17'); # 17:00:00
+
+  # now time can be signed
+  $t = Image::Synchronize::Timestamp->new('-17:44:12+03:00');
+  $t = Image::Synchronize::Timestamp->new('+17:44:12+03:00');
+  print $t->display_time;    # +17:44:12+03:00
 
   # number of non-leap seconds since the epoch
-  $time_local = $t->time_local; # in local timezone
+  $time_local = $t->time_local; # in local timezone, 
   $time_utc = $t->time_utc;     # in UTC
 
   $offset = $t->offset_from_utc; # in seconds
 
-  $t3 = $t->clone;              # clone
-  $t == $t3;                    # test equality
-  $t != $t2;                    # test inequality
-  print "$t";                   # back to text format
+  $t2 = $t;                     # clone
+  $t2 = $t + 30;      # $t2 is later than $t by 30 seconds; 17:44:42+03:00
+  $t2 = 30 + $t;      # same as previous
+  # NOTE: cannot add two Image::Synchronize::Timestamps
+
+  $d = $t2 - $t;      # difference between instants in seconds, 30
+  $t2 = $t - 20;      # 17:43:52+03:00
+  $t3 = -$t;          # opposite times, equal timezones
+  print $t3->display_time; # -17:44:12+03:00
+
+  $t == $t3;          # test equality of instants; also <, <=, !=, >=, >
+
+  $t->identical($t3);           # test equality of local times and offsets
+
+  $t = Image::Synchronize::Timestamp->new('2010-06-27T17:44:12+03:00');
+  print "$t";         # text (Exif) format; 2010:06:27 17:44:12+03:00
+  print $t->display_iso;  # ISO8601 format: 2010-06-27T17:44:12+03:00
+  print $t->display_utc;  # ISO in UTC:     2010-06-27T14:44:12Z
+  print $t->display_time; # no date:        +354905:44:12+03:00
 
 =head1 SUBROUTINES/METHODS
 
 =cut
-
-use warnings;
-use strict;
 
 use Carp;
 use Scalar::Util qw(blessed looks_like_number);
@@ -105,7 +131,8 @@ sub new {
   $ok = Image::Synchronize::Timestamp->istypeof($item);
 
 Returns a true value if C<$item> is an instance of (a subclass of)
-Image::Synchronize::Timestamp, and a false value otherwise.
+Image::Synchronize::Timestamp, and a false value otherwise (including
+when C<$item> is not an object).
 
 =cut
 
@@ -116,16 +143,10 @@ sub istypeof {
 
 =head2 time_local
 
-  $time = $t->time_local;       # range beginning or instant
-  @times = $t->time_local;      # range beginning and end
+  $time = $t->time_local;
 
-In list context, returns the number of non-leap seconds since the
-epoch in the timezone associated with the timestamp, for both the
-range beginning and range end -- or C<undef> for whichever of those
-isn't included in C<$t>.
-
-In scalar context, returns the value for the range beginning (or
-single instant) only.
+Returns the number of non-leap seconds since the epoch in the timezone
+associated with the timestamp, or C<undef> if the timestamp is empty.
 
 =cut
 
@@ -153,8 +174,8 @@ sub time_utc {
 
 =head2 has_timezone_offset
 
-  Returns a true value if timestamp C<$t> has a timezone offset, and a
-  false value otherwise.
+Returns a true value if timestamp C<$t> has a timezone offset, and a
+false value otherwise.
 
 =cut
 
@@ -163,10 +184,10 @@ sub has_timezone_offset {
   return defined $self->{offset_from_utc};
 }
 
-sub contains_local {
-  my ( $self, $time ) = @_;
-  return $self->{time} == $time;
-}
+# sub contains_local {
+#   my ( $self, $time ) = @_;
+#   return $self->{time} == $time;
+# }
 
 =head2 offset_from_utc
 
@@ -201,9 +222,9 @@ sub clone {
 
   $t1->identical($t2);
 
-Returns C<true> if the two C<Image::Synchronize::Timestamp> are identical, and
-C<false> otherwise.  They are identical if both the time and the
-timezone offset are equal in both.
+Returns C<true> if the two timestamps are identical, and C<false>
+otherwise.  They are identical if the time and the timezone offset are
+identical in both.
 
 =cut
 
@@ -312,6 +333,9 @@ sub subtract {
   else {
     my $result = $self->clone;
     $result->{time} -= $other;
+    if ($swap) {
+      $result->{time} = -$result->{time};
+    }
     return $result;
   }
 }
@@ -363,23 +387,46 @@ sub parse_components_ {
   # complete = DateSTimeTimezone
   #         or DateSTime
   #         or TimeTimezone
+  #         or SignTimeTimezone
   if (
-    $text =~ /(?:
-                (?<year>\d+)
-                ([-:])
-                (?<month>\d+)
-                \g{-2}
-                (?<day>\d+)
-                [ T])?
+    $text =~ /^
+              (?:
+                (?:
+                  (?:
+                    (?<year>\d+)
+                    ([-:])
+                    (?<month>\d+)
+                    \g{-2}
+                    (?<day>\d+)
+                    [ T]
+                  )?
+                  (?<hour>\d+)
+                )
+              |
+                (?<hoursign>[-+])
                 (?<hour>\d+)
-                (?::(?<minute>\d+))?
-                (?::(?<second>\d+))?
-                (?:(?<tzutc>Z)  # Z means UTC
-                |(?:(?<tzsign>[-−+])
-                    (?<tzhour>\d+)
-                    (?::(?<tzminute>\d+))?
-                    (?::(?<tzsecond>\d+))?
-                ))?/x
+              )
+              (?::
+                (?<minute>\d+)
+              )?
+              (?::
+                (?<second>\d+)
+              )?
+              (?:
+                (?<tzutc>Z)  # Z means UTC
+              |
+                (?:
+                  (?<tzsign>[-+])
+                  (?<tzhour>\d+)
+                  (?::
+                    (?<tzminute>\d+)
+                  )?
+                  (?::
+                    (?<tzsecond>\d+)
+                  )?
+                )
+              )?
+              $/x
     )
   {    # timezone
     my $offset;
@@ -392,10 +439,20 @@ sub parse_components_ {
       $offset += $+{tzsecond} if $+{tzsecond};
       $offset = -$offset if $+{tzsign} eq '-';
     }
-    return map { defined($_) ? 1 * $_ : $_ } (
-      $+{year},   $+{month},  $+{day}, $+{hour},
-      $+{minute}, $+{second}, $offset
-    );
+    my @c = map { defined($_) ? 1 * $_ : $_ }
+      (
+       $+{year},  $+{month},  $+{day},
+       $+{hour}, $+{minute}, $+{second},
+       $offset
+     );
+    if (defined($+{hoursign}) && $+{hoursign} eq '-') {
+      foreach my $i (qw(3 4 5)) {
+        if (defined $c[$i]) {
+          $c[$i] *= -1;
+        }
+      }
+    }
+    return @c;
   }
   else {
     return ();
@@ -406,14 +463,20 @@ sub components_to_time_and_offset_ {
   my @components = @_;
   $components[$_] //= 0 foreach 3 .. 5;    # hours .. seconds
   my $time;
-  eval {
-    $time = timegm(
-      $components[5], $components[4], $components[3], $components[2],
-      $components[1] - 1,
-      $components[0] - 1900
-    );
-  };
-  return if $@;                            # unparseable time
+  if (defined $components[0]) {
+    # have year-month-day too
+    eval {
+      $time = timegm(
+                     $components[5], $components[4], $components[3],
+                     $components[2], $components[1] - 1,
+                     $components[0] - 1900
+                   );
+    };
+    return if $@;               # unparseable time
+  } else {
+    $time = $components[3]*3600 + ($components[4] // 0)*60
+      + ($components[5] // 0);
+  }
   return ( $time, $components[6] );
 }
 
@@ -427,35 +490,38 @@ sub parse_ {
   #       0      1    2     3       4       5       6
   #   (year, month, day, hour, minute, second, offset)
 
-  # must have at least year-month-day-hour for the range beginning
-  return
-        unless defined $components[0]
-    and defined $components[1]
-    and defined $components[2]
-    and defined $components[3];
+  # must have at least the hour
+  return unless defined $components[3];
   return components_to_time_and_offset_(@components);
+}
+
+sub display_tz_ {
+  my ($offset) = @_;
+  my $tz = '';
+  if ( defined $offset ) {
+    use integer;
+
+    my $sign = ($offset < 0)? '-': '+';
+    $offset = abs($offset);
+    my $tzhour = $offset / 3600;
+    $offset -= 3600 * $tzhour;
+    my $tzmin = $offset / 60;
+    $offset -= 60 * $tzmin;
+    if ($offset) {
+      $tz = $sign . sprintf( '%02d:%02d:%02d', $tzhour, $tzmin, $offset );
+    }
+    else {
+      $tz = $sign . sprintf( '%02d:%02d', $tzhour, $tzmin );
+    }
+  }
+  return $tz;
 }
 
 sub display_one_ {
   my ( $time, $offset, $format ) = @_;
   return unless defined $time;
   my ( $sec, $min, $hour, $mday, $mon, $year ) = gmtime($time);
-  my $tz = '';
-  if ( defined $offset ) {
-    use integer;
-
-    # assume rounding toward zero
-    my $tzhour = $offset / 3600;
-    $offset -= 3600 * $tzhour;
-    my $tzmin = $offset / 60;
-    $offset -= 60 * $tzmin;
-    if ($offset) {
-      $tz = sprintf( '%+03d:%02d:%02d', $tzhour, abs($tzmin), abs($offset) );
-    }
-    else {
-      $tz = sprintf( '%+03d:%02d', $tzhour, abs($tzmin) );
-    }
-  }
+  my $tz = display_tz_($offset);
   $format //= '%d:%02d:%02d %02d:%02d:%02d';
   return
     sprintf( $format, $year + 1900, $mon + 1, $mday, $hour, $min, $sec ) . $tz;
@@ -540,6 +606,29 @@ sub display_utc {
   my $second = display_utc_one_( $times[1] );
   $result .= "/$second" if $second;
   return $result;
+}
+
+=head2 display_time
+
+  $text = $t->display_time
+
+Returns a text version of C<$t> as a signed time value.  The returned
+text is like C<'+03:04:05-06:07'>, showing the signed time (hour,
+minute, second) since the epoch in the associated timezone, followed
+by the designation of that timezone.  The hour number is not
+restricted to be less than 24, and can be negative.  The example is
+for a time that is 3 hours 4 minutes 5 seconds since the epoch in a
+timezone that is 6 hours and 7 minutes earlier than UTC.
+
+This method is useful for timestamps without dates.  If C<$t> was
+created with a date part, then the displayed number of hours is likely
+to be very large.
+
+=cut
+
+sub display_time {
+  my ($self) = @_;
+  return display_tz_($self->time_local) . display_tz_($self->offset_from_utc);
 }
 
 =head2 set_from_text
@@ -832,7 +921,7 @@ Louis Strous E<lt>LS@quae.nlE<gt>
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright (c) 2016-2018 Louis Strous.
+Copyright (c) 2016-2020 Louis Strous.
 
 This program is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.
