@@ -82,6 +82,10 @@ I<imsync.log> schrijft).
   --recurse        Behandel ook submappen.  Dit is de standaard.
                    --Gebruik --no-recurse om submappen niet te
                    --behandelen.
+  --relativefiletime  Geef de bestandsaanpassingstijden dezelfde
+                   lokale kloktijd als in de (verre) tijdzone waarin
+                   de foto gemaakt werd, in plaats van hetzelfde
+                   absolute tijdstip.
   --removebackups  Verwijder back-upbestanden.  Kan ook worden
                    geschreven als --remove-backups.
   --removeourtags  Verwijder metainformatie die door dit programma was
@@ -398,6 +402,15 @@ genoemd in de C<HOME> omgevingsvariabele.
 
 Behandel ook submappen.  Dit is de standaard.  Het tegenovergestelde
 is C<--norecurse>.
+
+=head2 --relativefiletime
+
+Zegt dat de lokale kloktijd van de afbeeldingen ten opzichte van de
+tijdzone waarin de foto's werden gemaakt moeten worden
+getransplanteerd naar de tijdzone van het lokale systeem.  Dan komen
+foto's die genomen werden rond het middaguur in verschillende
+tijdzones allemaal terecht bij het middaguur op het lokale systeem
+(als ze op bestandsveranderingtijd gesorteerd worden).
 
 =head2 --removebackups
 
@@ -751,18 +764,35 @@ is een voorbeeld:
     CameraID1:
       2017-06-22T15:57:01: +0:00
     CameraID2:
-      2017-06-19T14:08:22: +1:05:46
+      2017-06-19T14:08:22: +0:05:46+03:00
     CameraID3:
       2017-06-20T00:15:54: +4:00
       2017-06-23T05:21:25: +2:00
-      2017-06-25T13:44:12: +2:00
+      2017-06-25T13:44:12: +0:00+02:00
 
 Van de camera's met camera-IDs C<CameraID1> and C<CameraID2> is tot nu
-toe elk maar één foto of film verwerkt.  Van de camera met camera-ID
-C<CameraID3> zijn al meerdere afbeeldingen verwerkt, waarvan de
-tijdstippen vanaf het eerstgenoemde tot net voor het tweede waren in
-tijdzone UTC+4:00, en degenen vanaf het tweede tijdstip tot en met het
-laatste tijdstip waren in tijdzone UTC+2:00.
+toe elk maar één foto of bestand verwerkt.  Van de camera met
+camera-ID C<CameraID3> zijn al meerdere afbeeldingen verwerkt, waarvan
+de tijdstippen vanaf het eerstgenoemde tot net voor het tweede werden
+genomen toen de tijdzone van de camera overeenkwam met UTC+4:00, en
+degenen vanaf het tweede tijdstip tot en met het laatste tijdstip
+werden genomen toen de tijdzone van de camera overeenkwam met
+UTC+2:00.
+
+Sinds versie 2.001 van deze applicatie worden cameratijdzones
+opgeslagen met twee tijdcomponenten, bijvoorbeeld C<+0:00:15+02:00>.
+De tweede component zegt welke de tijdzone van toepassing was op de
+plek waar de foto werd gemaakt, en de eerste component zegt hoeveel de
+cameraklok was afgedreven van die tijdzone.  In het voorbeeld werd de
+foto genomen op een plek waar de tijdzone UTC+02:00 was, en de klok
+van de camera liep 15 seconden voor op die tijdzone.
+
+Oudere versies van deze applicatie sloegen cameratijdzones op met maar
+één component.  De som van de twee nieuwere componenten komt overeen
+met de oudere waarde.
+
+Het gebruik van twee componenten is van belang voor de optie
+L</--relativefiletime>.
 
 Voor elke camera-ID zijn de eerste en laatste tijdstippen die in het
 cameratijdverschilbestand staan verbonden met de oudste en jongste
@@ -797,6 +827,10 @@ hun voorkeurs-L<camera-ID|/Camera-ID>.  Als de camera-ID voor een foto
 of film in de lokale tijdzone C<Merk|Model|Serienummer> is, dan is de
 camera-ID voor een bedoeld-UTC-afbeelding door dezelfde camera gelijk
 aan C<Merk|Model|Serienummer|U>.
+
+Momenteel vallen alleen Apple-QuickTime-filmpjes in deze categorie.
+Gebruik optie L</--cameraid> om een ander camera-ID toe te kennen als
+dat nodig is.
 
 =head2 GPS-bepalingsvertraging
 
@@ -928,6 +962,40 @@ Anders is het bestand geen (standaard-)afbeeldingsbestand en wordt het
 aangemerkt voor latere verwerking als alle
 (standaard-)afbeeldingsbestanden verwerkt zijn.  Zie
 L</Bestandsnummers>.
+
+=head2 Relatieve Bestandstijden
+
+Standaard zijn de doeltijdstippen I<absolute tijden>.  Als twee mensen
+foto's maken van dezelfde gebeurtenis (bijvoorbeeld van een
+maansverduistering, of van zichzelf terwijl ze met elkaar bellen) en
+dan het huidige programma goed gebruiken, dan eindigen hun foto's met
+praktisch dezelfde doeltijdstippen gemeten ten opzichte van UTC, zelfs
+als hun foto's werden gemaakt op plekken in heel verschillende
+tijdzones.  Maar zulke absolute tijdstippen zijn niet altijd het meest
+handig voor het organiseren en vertonen van je foto's en filmpjes.
+
+Stel, je reist naar een plek in een verre tijdzone.  De dag is op die
+plek een paar uur verschoven ten opzichte van thuis.  Je eet je
+avondeten op de daar normale tijd, je slaapt als het daar nacht is, en
+je neemt zonnige foto's als het daar dag is.  Als je weer thuis bent
+en dit programma gebruikt om je foto's te synchroniseren dan komen ze
+terecht bij de juiste absolute tijden, maar het dagelijkse ritme dat
+in die foto's te zien is is een paar uur verschoven ten opzichte van
+de kloktijden van thuis.  Die foto van je diner kan terechtkomen na
+middernacht in je thuistijdzone, en die zonnige foto's kunnen in je
+thuistijdzone diep in de nacht terechtkomen.  Als het programma
+waarmee je de foto's toont ook de laatste bestandsverandertijd laat
+zien dan geven die niet de kloktijd aan die het toen was op die verre
+plek maar de kloktijd die het op hetzelfde moment thuis was.
+
+Als L</--relativefiletime> wordt gebruikt dan wordt het doeltijdstip
+aangepast voor het verschil tussen de verre en thuistijdzones zodat
+foto's die rond het midden van de dag op de verre plek gemaakt werden
+ook op het huidige systeem terechtkomen rond het midden van de dag.
+
+Alleen de bestandsverandertijd wordt op die manier aangepast.  Het
+tijdstip dat in de foto wordt opgenomen (I<DateTimeOriginal>, en
+I<GPSDateTime> als die beschikbaar is) is nog steeds de absolute tijd.
 
 =head2 Bestandsnummers
 
@@ -1213,7 +1281,7 @@ Louis Strous E<lt>LS@quae.nlE<gt>.
 
 =head1 LICENTIE EN COPYRIGHT
 
-Copyright (c) 2018 Louis Strous.
+Copyright (c) 2018-2020 Louis Strous.
 
 Dit programma is vrije software; je kunt het verspreiden en/of
 aanpassen onder dezelfde voorwaarden als Perl zelf.
