@@ -4,6 +4,7 @@ use warnings;
 
 use Image::Synchronize::CameraOffsets;
 use Image::Synchronize::Logger qw(log_message set_printer);
+use Image::Synchronize::Timestamp;
 use Test::More;
 use YAML::Any qw(Dump Load);
 
@@ -432,5 +433,13 @@ foreach my $test (@tests) {
     fail("bad merge?");
   }
 }
+
+# Test offsets with timezones
+
+$co = $co->new;
+my $t = Image::Synchronize::Timestamp->new('-0:1:2+05:00');
+$co->set('A', 1234, $t);
+my $t2 = $co->get('A', 1000);
+is($t2->display_time, '-00:01:02+05:00', 'offset with timezone');
 
 done_testing;

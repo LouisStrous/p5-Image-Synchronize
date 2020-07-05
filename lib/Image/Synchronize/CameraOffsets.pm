@@ -32,13 +32,14 @@ use YAML::Any qw(
 =head2 new
 
   $co = Image::Synchronize::CameraOffsets->new;
+  $co2 = $co->new;
 
 Creates and returns a new instance of this class.
 
 =cut
 
 sub new {
-  my ( $class, %options ) = @_;
+  my ( $invocant, %options ) = @_;
 
   # all three hash references have structure
   # $camera_id => { $time => $offset }
@@ -50,7 +51,7 @@ sub new {
     exists( $options{log_callback} )
     ? ( log_callback => $options{log_callback} )
     : (),
-  }, $class;
+  }, (ref($invocant) || $invocant);
 }
 
 =head2 set
@@ -67,8 +68,16 @@ C<$time> is the time (either in seconds since the epoch, as for
 L<gmtime>, or else as an L<Image::Synchronize::Timestamp>) of the
 image for which the offset is specified.
 
-C<$offset> is the time offset in seconds that is valid at the
-specified C<$time>.
+C<$offset> is the time offset that is valid at the specified C<$time>.
+It must be either a number, or else an
+L<Image::Synchronize::Timestamp>.
+
+If it is a number, then that is the time offset in seconds.
+
+If it is an L<Image::Synchronize::Timestamp>, then the timezone part
+provides the nominal timezone that the camera clock was set to, and
+the clock time part provides the time offset relative to the nominal
+timezone.
 
 C<$file> is the optional file name.  If it is defined, then it is used
 in any generated messages.
@@ -86,10 +95,11 @@ sub set {
   if ( Image::Synchronize::Timestamp->istypeof($time) ) {
     $time = $time->time_utc // $time->time_local;
   }
-  croak 'Offset must be a scalar but was a '
-    . ref($offset)
-    . ( $file ? " for $file" : '' ) . "\n"
-    if ref $offset;
+  if (ref($offset) && not(Image::Synchronize::Timestamp->istypeof($offset))) {
+    croak 'Offset must be a scalar or an Image::Synchronize::Timestamp '
+      . 'but was a ' . ref($offset)
+      . ( $file ? " for $file" : '' ) . "\n";
+  }
   my $changed = 0;
   if ( not defined $self->{added}->{$camera_id}->{$time} ) {
     $changed = 1;
@@ -272,12 +282,6 @@ sub get {
     $time = $time->time_local;
   }
   $self->make_effective;
-  $self->{min_added_time} = $time
-    if not( defined $self->{min_added_time} )
-    || $time < $self->{min_added_time};
-  $self->{max_added_time} = $time
-    if not( defined $self->{max_added_time} )
-    || $time > $self->{max_added_time};
   $self->{accessed_cameras}->{$camera_id} = 1;
   my $c = $self->{effective}->{$camera_id};
   my @times = sort { $a <=> $b } keys %{$c};
@@ -434,22 +438,14 @@ sub display_time {
   return $t->display_iso;
 }
 
-# returns a version of timezone offset C<$offset> (in seconds) that is
-# ready for display.  For use by the L</stringify> method.
+# returns a version of timezone offset C<$offset> (a scalar in
+# seconds, or an L<Image::Synchronize::Timestamp>) that is ready for
+# display.  For use by the L</stringify> method.
 sub display_offset {
   my ($offset) = @_;
-  use integer;
-  my $tzmin  = $offset / 60;
-  my $tzsec  = $offset % 60;
-  my $tzhour = $tzmin / 60;
-  $tzmin = abs( $tzmin % 60 );
-  $tzsec = abs($tzsec);
-  if ($tzsec) {
-    return sprintf( '%+d:%02d:%02d', $tzhour, $tzmin, $tzsec );
-  }
-  else {
-    return sprintf( '%+d:%02d', $tzhour, $tzmin );
-  }
+  $offset = Image::Synchronize::Timestamp->new($offset)
+    unless Image::Synchronize::Timestamp->istypeof($offset);
+  return $offset->display_time;
 }
 
 =head2 relevant_part
@@ -577,7 +573,7 @@ Louis Strous E<lt>LS@quae.nlE<gt>
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright (c) 2018 Louis Strous.
+Copyright (c) 2018 - 2020 Louis Strous.
 
 This program is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.
