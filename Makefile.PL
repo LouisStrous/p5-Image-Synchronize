@@ -9,6 +9,7 @@ WriteMakefile(
     PREREQ_PM         => {
                           'IO::Interactive' => 0,
                           'Image::ExifTool' => '10.14',
+                          'Modern::Perl' => 0,
                           'Path::Class' => 0,
                           'Path::Iterator::Rule' => 0,
                           'Term::ProgressBar' => 0,
@@ -21,7 +22,24 @@ WriteMakefile(
     ABSTRACT_FROM     => 'lib/Image/Synchronize.pm', # retrieve abstract from module
     AUTHOR            => 'Louis Strous <LS@quae.nl>',
     LICENSE           => 'perl',
-);
+    META_MERGE =>
+              {
+               'meta-spec' => { version => 2 },
+               resources =>
+               {
+                repository =>
+                {
+                 type => 'git',
+                 url  => 'https://github.com/LouisStrous/p5-Image-Synchronize.git',
+                 web  => 'https://github.com/LouisStrous/p5-Image-Synchronize',
+               },
+                bugtracker =>
+                {
+                 web => 'https://github.com/LouisStrous/p5-Image-Synchronize/issues'
+               },
+              },
+             },
+            );
 
 sub MY::postamble {
   return <<'EOD';
