@@ -7,6 +7,7 @@ WriteMakefile(
     VERSION_FROM      => 'lib/Image/Synchronize.pm', # finds $VERSION, requires EU::MM from perl >= 5.5
     EXE_FILES => [ 'bin/imsync' ],
     PREREQ_PM         => {
+                          'Clone' => 0,
                           'IO::Interactive' => 0,
                           'Image::ExifTool' => '10.14',
                           'Modern::Perl' => 0,
