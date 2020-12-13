@@ -83,7 +83,7 @@ use YAML::Any qw(
 # always use x.yyy version numbering, so that string comparison and
 # numeric comparison give the same ordering, to avoid trouble due to
 # different ways of interpreting version numbers.
-our $VERSION = '2.006';
+our $VERSION = '2.007';
 
 my $CASE_TOLERANT;
 
@@ -2802,7 +2802,8 @@ sub process_user_times {
       else {    # timestamp
         $value = Image::Synchronize::Timestamp->new($rhs);
         if ( defined $value ) {
-          $value->set_to_local_timezone_if_not_set;
+          $value->adjust_to_local_timezone
+            unless $value->has_timezone_offset;
         }
         else {
           log_error(

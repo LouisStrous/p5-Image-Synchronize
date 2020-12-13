@@ -1,5 +1,9 @@
 Revision history for Perl extension Image::Synchronize.
 
+2.007 2020-12-13
+
+      - --time <file>=<timestamp> produced an internal error.
+
 2.006 2020-12-12
 
       - The assumption that (like for GPSLongitude and GPSLatitude)
