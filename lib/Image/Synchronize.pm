@@ -2730,7 +2730,7 @@ sub process_user_times {
     if ( looks_like_number($rhs) ) {    # offset in seconds
       my $createdate = $info->get('CreateDate');
       if ( defined $createdate ) {
-        $value = $createdate->clone_to_local_timezone + $rhs;
+        $value = $createdate->clone->adjust_to_local_timezone + $rhs;
       }
       else {
         # no CreateDate; cannot apply offset
@@ -2759,7 +2759,7 @@ sub process_user_times {
       $value = -$value if ( $+{sign} // '+' ) eq '-';
       my $createdate = $info->get('CreateDate');
       if ( defined $createdate ) {
-        $value = $createdate->clone_to_local_timezone + $value;
+        $value = $createdate->clone->adjust_to_local_timezone + $value;
       }
       else {
         # no CreateDate; cannot apply offset
