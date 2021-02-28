@@ -2063,12 +2063,6 @@ sub inspect_files {
       my $info =
         $self->get_image_info( $file );
 
-      # TODO: remove this when the author no longer needs it to
-      # transition from exiftime to imsync
-      if ( defined $info->get('ExiftimeVersion') ) {
-        log_warn("ExiftimeVersion found in $file.\n");
-      }
-
       # if we have the creation timestamp only from the file system
       # and not from an embedded tag, then we cannot deduce the target
       # timestamp from the creation timestamp (because the file
@@ -2079,25 +2073,31 @@ sub inspect_files {
         if defined($createdate)
         and $group ne 'File';
 
-      my $count_essential_gps_tags = 0;
-      foreach (qw(GPSDateTime GPSLongitude GPSLatitude)) {
-        ++$count_essential_gps_tags if defined $info->get($_);
-      }
-      if (  $count_essential_gps_tags
-        and $count_essential_gps_tags < 3 )
-      {
-        log_warn(<<EOD);
+      if (is_image_or_movie($info)) {
+        # TODO: remove this when the author no longer needs it to
+        # transition from exiftime to imsync
+        if ( defined $info->get('ExiftimeVersion') ) {
+          log_warn("ExiftimeVersion found in $file.\n");
+        }
+
+        my $count_essential_gps_tags = 0;
+        foreach (qw(GPSDateTime GPSLongitude GPSLatitude)) {
+          ++$count_essential_gps_tags if defined $info->get($_);
+        }
+        if (  $count_essential_gps_tags
+              and $count_essential_gps_tags < 3 )
+        {
+          log_warn(<<EOD);
 File '$file' has some but not all of GPSDateTime,
 GPSLongitude, GPSLatitude.  Ignoring its GPS information.
 EOD
-        $info->delete($_)
-          foreach qw(GPSLatitude GPSLongitude GPSAltitude GPSDateTime);
-      }
+          $info->delete($_)
+            foreach qw(GPSLatitude GPSLongitude GPSAltitude GPSDateTime);
+        }
 
-      $info->set( 'supposedly_utc', 1 ) if is_supposedly_utc($info);
+        $info->set( 'supposedly_utc', 1 ) if is_supposedly_utc($info);
 
-      # determine the camera ID
-      if (is_image_or_movie($info)) {
+        # determine the camera ID
         my $camera_id = $info->get('CameraID');    # embedded camera ID
         if ( defined $camera_id ) {
 
@@ -2127,9 +2127,8 @@ EOD
         $info->set( 'fallback_camera_id', $fallback_camera_id );
 
         ++$count_image_files;
+        ++$count_gps_times if defined $info->{GPSDateTime};
       }
-
-      ++$count_gps_times   if defined $info->{GPSDateTime};
 
       $self->{original_info}->{$file} = $info;
       log_message( 2, { name => $file }, $info->stringify(' Found ') . "\n" );
