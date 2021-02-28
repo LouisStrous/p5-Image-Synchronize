@@ -83,7 +83,7 @@ use YAML::Any qw(
 # always use x.yyy version numbering, so that string comparison and
 # numeric comparison give the same ordering, to avoid trouble due to
 # different ways of interpreting version numbers.
-our $VERSION = '2.007';
+our $VERSION = '2.008';
 
 my $CASE_TOLERANT;
 
@@ -139,6 +139,8 @@ my @all_tags;
    );
   @all_tags = sort keys %tags;
 }
+
+my %all_tags = map { $_ => 1 } @all_tags;
 
 my %time_tags;
 
@@ -375,7 +377,7 @@ sub base_camera_id {
   # Make|Model|SerialNumber|U.  However, camera IDs that the user
   # supplies through --cameraid can have any format, and perhaps we
   # appended the "|U" suffix.
-  return $1 if $camera_id =~ /^(.*?)\|U$/;
+  return $1 if defined($camera_id) and $camera_id =~ /^(.*?)\|U$/;
   return $camera_id;
 }
 
@@ -633,7 +635,6 @@ sub determine_new_values_for_all_files {
   foreach my $file (@files) {
     my $info = $self->{original_info}->{$file};
 
-
     if ( $self->has_useful_timestamp($file, $info) ) {
 
       # remember which files with embedded timestamps have which image
@@ -648,7 +649,7 @@ sub determine_new_values_for_all_files {
       my $extra_info = $self->{extra_info}->{$file};
       if (defined($extra_info)) {
         my $f = $extra_info->get('min_force_for_change');
-        ++$count_needs_force{$f} if  $f;
+        ++$count_needs_force{$f} if $f;
       }
     }
     elsif ( defined $info->get('image_number') ) {
@@ -729,7 +730,7 @@ EOD
       my $extra_info = $self->{extra_info}->{$file};
       if (defined($extra_info)) {
         my $f = $extra_info->get('min_force_for_change');
-        ++$count_needs_force{$f} if  $f;
+        ++$count_needs_force{$f} if $f;
       }
     }
     else {
@@ -852,10 +853,11 @@ sub determine_new_values_for_file {
   my $timesource_letter;    # letter to identify time source in report
   my $camera_timezone_offset;   # target timezone and offset of camera
 
+  my $target_file_info;
   if ( defined $target_file ) {
 
     # copying target time from another file
-    my $target_file_info = $self->{new_info}->{$target_file};
+    $target_file_info = $self->{new_info}->{$target_file};
     $target_file_time  = $target_file_info->get('FileModifyDate');
     $target_dto_time   = $target_file_info->get('DateTimeOriginal');
     $timesource_letter = 'n';
@@ -999,6 +1001,15 @@ sub determine_new_values_for_file {
         # presumably able to store a GPS position; deduce one if
         # possible.
         #
+        # Do we have a target file with GPS information?
+        if (defined($target_file_info)
+            && defined($target_file_info->get('GPSDateTime'))) {
+          push @messages, " GPS information copied from '$target_file'.";
+          foreach my $tag (@gps_location_tags, 'GPSDateTime') {
+            $new_info->set($tag, $target_file_info->get($tag));
+          }
+        }
+        #
         # If the file already had a GPS position, then should we
         # update it?  If TimeSource was absent or equal to 'GPS', then
         # the existing GPS position was embedded in the file when the
@@ -1130,67 +1141,92 @@ sub determine_new_values_for_file {
   my $gps_location_tags_count;
   my $min_force_for_change = 99;
   my %changes;
-  foreach my $tag (
-    qw(
-    CameraID
-    DateTimeOriginal
-    ImsyncVersion
-    FileModifyDate
-    GPSAltitude
-    GPSLatitude
-    GPSLongitude
-    TimeSource
-    )
-    )
-  {
-    my $new    = $new_info->get($tag);
-    my $old    = $info->get($tag);
+  if ($info->get('_', 'isMetadata')) {
+    # a metadata file; cannot change any embedded tags, only file
+    # modification timestamp
+    my $tag = 'FileModifyDate';
+    my $new = $new_info->get($tag);
+    my $old = $info->get($tag);
     my $change = 1;
-
-    if ( (defined($gps_location_tags{$tag}))
-         and (defined($old) or defined($new)) ) {
-      ++$gps_location_tags_count;
-      next;                     # handle these separately
-    }
 
     if ( defined $old ) {
       if ( defined $new ) {
         if ( $new ne $old ) {
           push @messages, " $tag has changed.";
-        }
-        else {
+        } else {
           $change = 0;
         }
-      }
-      else {       # old but not new
+      } else {                # old but not new
         push @messages, " $tag has disappeared,";
       }
-    }
-    elsif ( defined $new ) {    # new but not old
+    } elsif ( defined $new ) { # new but not old
       push @messages, " $tag is new.";
-    }
-    else {                      # neither new nor old
+    } else {                  # neither new nor old
       $change = 0;
     }
     if ($change) {
-      state $force_1_tags = {
-        map { $_ => 1 }
-          qw(
-          CameraID
-          DateTimeOriginal
-          ImsyncVersion
-          TimeSource
-          )
-      };
-      if ( $tag eq 'FileModifyDate' ) {
-        $min_force_for_change = 0
-          if $min_force_for_change > 0;
-        $changes{$tag} = 0;
+      $min_force_for_change = 0
+        if $min_force_for_change > 0;
+      $changes{$tag} = 0;
+    }
+  } else {
+    # not a metadata file
+    foreach my $tag (
+                     qw(
+                         CameraID
+                         DateTimeOriginal
+                         ImsyncVersion
+                         FileModifyDate
+                         GPSAltitude
+                         GPSLatitude
+                         GPSLongitude
+                         TimeSource
+                     )
+                   ) {
+      my $new    = $new_info->get($tag);
+      my $old    = $info->get($tag);
+      my $change = 1;
+
+      if ( (defined($gps_location_tags{$tag}))
+           and (defined($old) or defined($new)) ) {
+        ++$gps_location_tags_count;
+        next;                   # handle these separately
       }
-      elsif ( exists $force_1_tags->{$tag} ) {
-        $min_force_for_change = 1
-          if $min_force_for_change > 1;
-        $changes{$tag} = 1;
+
+      if ( defined $old ) {
+        if ( defined $new ) {
+          if ( $new ne $old ) {
+            push @messages, " $tag has changed.";
+          } else {
+            $change = 0;
+          }
+        } else {                # old but not new
+          push @messages, " $tag has disappeared,";
+        }
+      } elsif ( defined $new ) { # new but not old
+        push @messages, " $tag is new.";
+      } else {                  # neither new nor old
+        $change = 0;
+      }
+      if ($change) {
+        state $force_1_tags = {
+                               map { $_ => 1 }
+                               qw(
+                                   CameraID
+                                   DateTimeOriginal
+                                   ImsyncVersion
+                                   TimeSource
+                               )
+                             };
+        if ( $tag eq 'FileModifyDate' ) {
+          $min_force_for_change = 0
+            if $min_force_for_change > 0;
+          $changes{$tag} = 0;
+        } elsif ( exists $force_1_tags->{$tag} ) {
+          $min_force_for_change = 1
+            if $min_force_for_change > 1;
+          $changes{$tag} = 1;
+        }
       }
     }
   }
@@ -1856,6 +1892,41 @@ sub get_image_info {
   return $info;
 }
 
+# read image/movie metadata from a text file.  The metadata is assumed
+# to be in JSON or YAML format and to contain tags as produced by
+# "exiftool -n -j", optionally (and preferably) also with the "-G"
+# option.
+sub get_image_info_from_metadata_file {
+  my ($file) = @_;
+
+  my $info;
+
+  my $metadata = LoadFile($file);
+
+  if (ref($metadata) eq 'ARRAY' && scalar(@{$metadata}) == 1) {
+    # single-element array, uncover the single element
+    $metadata = $metadata->[0];
+  }
+  if (ref($metadata) eq 'HASH') {
+    $info = new Image::Synchronize::GroupedInfo;
+
+    foreach my $k (keys %{$metadata}) {
+      my ($group, $tag) = $k =~ /^(?:([^:]+):)?(.*)$/;
+      if (defined $tag) {
+        if (exists($all_tags{$k}) || exists($all_tags{$tag})) {
+          # a tag that interests us
+          $info->set($group, $tag, $metadata->{$k});
+        }
+      }
+    }
+    if ($info->tags_count > 0) {
+      # mark that this information is metadata about another file
+      $info->set('_', 'isMetadata', 1);
+    }
+  }
+  return $info;
+}
+
 # extract the image number from the C<$file> name.  The image number
 # is the last sequence of digits in the file name, excluding the
 # directory part and the file extension part, but only if that
@@ -2128,6 +2199,38 @@ EOD
 
         ++$count_image_files;
         ++$count_gps_times if defined $info->{GPSDateTime};
+      } else {
+        my $type;
+        if ($info->get('MIMEType') =~ m'application/(json|yaml)') {
+          # the MIMEType is detected based on the file's contents,
+          # regardless of its file name extension
+          $type = uc($1);
+        } elsif ($file =~ /\.ya?ml$/i) {
+          # but at the time of writing this there is no YAML-specific
+          # MIMEType yet, so we can also detect YAML files based on
+          # the file name extension
+          $type = 'YAML';
+        }
+        if ($type) {
+          my $metainfo = get_image_info_from_metadata_file($file);
+          if (defined $metainfo) {
+            my @tags = $metainfo->tags;
+            if (@tags) {
+              log_message(2, { name => $file }, " Is a $type meta-information file.\n" );
+              foreach my $tag ($metainfo->tags) {
+                my ($group, $value) = $metainfo->get_context($tag);
+                if (not defined($info->get($group, $tag))) {
+                  # this group/tag is not in $info yet
+                  if (exists $time_tags{$tag}) {
+                    $value = Image::Synchronize::Timestamp->new($value);
+                  }
+                  $info->set($group, $tag, $value);
+                }
+              }
+              ++$count_gps_times if defined $info->{GPSDateTime};
+            }
+          }
+        }
       }
 
       $self->{original_info}->{$file} = $info;
@@ -2138,6 +2241,7 @@ EOD
   }
   $self->cleanup_progressbar($progressbar);
 
+  log_message("\n");
   log_message("Found $count_gps_track_files GPS track file(s).\n")
     if $count_gps_track_files;
   log_message("Found $count_image_files image file(s).\n");
@@ -2164,6 +2268,7 @@ sub is_gpx_track {
     log_message( { name => $file },
       sub { "Cannot open file '$file' for reading: $^E\n" } );
   }
+  return 0;
 }
 
 #   $ok = is_image_or_movie($image_info);
@@ -3197,6 +3302,8 @@ EOD
     my $short;
     ( $short = $file ) =~ s/^(\Q$common_prefix_path\E)//o;
 
+    my $is_metainfo_file = $info->get('_', 'isMetadata');
+
     # G
     log_message( report_letter( 'GPSDateTime', $info, $new_info ) );
 
@@ -3204,7 +3311,9 @@ EOD
     log_message( report_letter( 'DateTimeOriginal', $info, $new_info ) );
 
     # O
-    {
+    if ($is_metainfo_file) {
+      log_message('=');
+    } else {
       my @letters = map { report_letter( $_, $info, $new_info ) }
         ( 'XMP:DateTimeOriginal', map { "XMP:$_" } @own_xmp_tags );
       my $combined = $letters[0];
