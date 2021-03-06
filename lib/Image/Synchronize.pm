@@ -2307,7 +2307,7 @@ sub length_of_common_prefix {
   my @a = split //, $a;
   my @b = split //, $b;
   my $i = 0;
-  ++$i while $a[$i] eq $b[$i];
+  ++$i while ($a[$i] // '') eq ($b[$i] // '');
   return $i;
 }
 
@@ -2355,6 +2355,11 @@ my %convert_for_writing = (
   TimeSource    => \&convert_to_xmp,
 );
 
+sub set_file_modification_time {
+  my ($self, $file, $time_utc) = @_;
+  return $self->backend->SetFileTime($file, undef, $time_utc);
+}
+
 #   $et->modify_file($file);
 #
 # Modify the $file as indicated in the information gathered in
@@ -2365,6 +2370,8 @@ my %convert_for_writing = (
 # Returns 1 if the file was modified OK, 2 if the file was written but
 # no changes were made, 3 if the file was not modified because no
 # backup could be created for it, 4 if there was an error writing the
+# file but the metadata could be written to a separate file, 5 if
+# there were errors writing the file and writing the separate metadata
 # file, and 0 if there were no changes to make.
 sub modify_file {
   my ( $self, $file ) = @_;
@@ -2486,6 +2493,27 @@ sub modify_file {
         );
         $status = 4;
 
+        {
+          # write the metadata to a separate file instead
+          my %values_for_export;
+          foreach my $tag ($new_info->tags) {
+            foreach my $group ($new_info->groups($tag)) {
+              my $v = $new_info->get($group, $tag);
+              $values_for_export{$group? "$group:$tag": $tag} = "$v";
+            }
+          }
+          my $metafile = "${file}.yaml";
+          my $ok = DumpFile($metafile, \%values_for_export);
+          if ($ok) {
+            log_message(" Wrote metadata to '$metafile' instead.\n");
+            $self->set_file_modification_time($metafile,
+                                              $new_info->get('FileModifyDate')->time_utc);
+          } else {
+            log_warn(" Writing metadata to '${file}.yaml' instead failed: $@\n");
+            $status = 5;
+          }
+        }
+
         # Probably the file is unchanged, but we don't know for sure.
         foreach my $tag (@{$changes}) {
           next if $tag eq 'FileModifyDate';
@@ -2511,7 +2539,7 @@ sub modify_file {
       # that sets the file modification time.
 
       my $fmt = $new_info->get('FileModifyDate');
-      my $success = $b->SetFileTime($file, undef, $fmt->time_utc);
+      my $success = $self->set_file_modification_time($file, $fmt->time_utc);
 
       if ($success) {
         log_message( 4, { name => $file },
