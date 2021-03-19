@@ -2406,9 +2406,6 @@ sub set_file_modification_time {
 sub modify_file {
   my ( $self, $file ) = @_;
 
-  # TODO: if only FileModifyDate needs to be changed, then does the
-  # Image::ExifTool backend rewrite the whole file?
-
   my $new_info   = $self->{new_info}->{$file};
   my $extra_info = $self->{extra_info}->{$file};
   my $changes    = $extra_info->get('changes');
@@ -2517,17 +2514,34 @@ sub modify_file {
         }
       }
       else {
+        # Writing via Image::ExifTool failed.  We write the tags to a
+        # corresponding metadata file instead.  If the writing failed
+        # because Image::ExifTool does not support the file type
+        # (yet), then we report that problem only for the first file
+        # of that type -- to avoid numerous otherwise unavoidable
+        # warnings.
+
+        my @messages;
         my $error = $b->GetValue('Error');
-        log_warn(
-          join( ', ',
-            " Writing '$file' failed",
-            ( $error ? "ExifTool reports:\n $error" : () ) )
+        if ($error =~ /(Writing of (?:.*?) files is not yet supported)/) {
+          state %suppress;
+          if (not $suppress{$1}) {
+            push @messages,
+              " Writing '$file' failed, ExifTool reports:\n  $error\n",
+              " This message is suppressed for similar following files.\n";
+            # mark that we reported this problem already
+            $suppress{$1} = 1;
+          }
+        } else {
+          push @messages,
+            join( ', ',
+                  " Writing '$file' failed",
+                  ( $error ? "ExifTool reports:\n $error" : () ))
             . "\n"
-        );
-        $status = 4;
+            ;
+        }
 
         {
-          # write the metadata to a separate file instead
           my %values_for_export;
           foreach my $tag ($new_info->tags) {
             foreach my $group ($new_info->groups($tag)) {
@@ -2536,14 +2550,32 @@ sub modify_file {
             }
           }
           my $metafile = "${file}.yaml";
-          my $ok = DumpFile($metafile, \%values_for_export);
-          if ($ok) {
-            log_message(" Wrote metadata to '$metafile' instead.\n");
-            $self->set_file_modification_time($metafile,
-                                              $new_info->get('FileModifyDate')->time_utc);
+          my $old_metainfo;
+          if (-r $metafile) {
+            $old_metainfo = LoadFile($metafile);
           } else {
-            log_warn(" Writing metadata to '${file}.yaml' instead failed: $@\n");
-            $status = 5;
+            $old_metainfo = {};
+          }
+          my $needs_write = 0;
+          foreach my $tag (%values_for_export) {
+            if (exists($old_metainfo->{$tag})
+                and $values_for_export{$tag} ne $old_metainfo->{$tag}) {
+              $needs_write = 1;
+              last;
+            }
+          }
+          if ($needs_write) {
+            my $ok = DumpFile($metafile, \%values_for_export);
+            if ($ok) {
+              push @messages, " Wrote metadata to '$metafile'.\n";
+              $self->set_file_modification_time($metafile,
+                                                $new_info->get('FileModifyDate')->time_utc);
+            } else {
+              push @messages, " Writing metadata to '${file}.yaml' failed: $@\n";
+              $status = 5;
+            }
+          } else {
+            $changed = 0; # no changes (perhaps excluding FileModifyDate) after all
           }
         }
 
@@ -2552,6 +2584,10 @@ sub modify_file {
           next if $tag eq 'FileModifyDate';
           $new_info->delete($tag);
         }
+
+        $status = 4;
+
+        log_warn(@messages) if @messages;
       }
     }
 
@@ -2581,6 +2617,8 @@ sub modify_file {
       } else {
         log_warn( " Error setting FileModifyDate of '$file' to '$fmt'\n");
       }
+    } else {
+      # TODO: don't report any changes for this file, either
     }
     $b->RestoreNewValues();     # return to clean slate
   }
