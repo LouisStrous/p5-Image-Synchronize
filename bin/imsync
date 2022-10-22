@@ -176,9 +176,28 @@ C<--rep>, because no other option begins with that prefix.
 =head1 ARGUMENTS
 
 The arguments are zero or more path name patterns that identify files
-and directories to process.  Wildcard C<*> matches any number of
-characters, and wildcard C<?> matches a single character.  If no
-arguments are specified, then the current directory is processed.
+and directories to process.  Various wildcards are supported:
+
+=over
+
+=item C<*> matches any number of characters.
+
+=item C<?> matches a single character.
+
+=item C<[x7p]> matches a single character out of the specified
+collection, in this case a character that is equal to an C<x> or a
+C<7> or a C<p>.
+
+=item C<[a-z]> matches a single character out of the specified range,
+in this case a character between C<a> and C<z>, inclusive.
+
+=item C<{at,be,cm}> matches one of the comma-separated alternatives,
+in this case either C<at> or C<be> or C<cm>.
+
+=back
+
+If no arguments are specified, then the current directory is
+processed.
 
 =head1 OPTION DETAILS
 
@@ -1186,7 +1205,7 @@ remains.
 
 The L</--verbose> and L</--follow> command-line options determine how
 verbose the logging is, except for the final report which is governed
-by L</--reportlevel> insead.
+by L</--reportlevel> instead.
 
 With no C<--verbose>, or with C<--verbose 1>, summary information is
 printed.

@@ -29,7 +29,7 @@ Louis Strous, E<lt>imsync@quae.nl<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2018-2020 by Louis Strous
+Copyright (C) 2018-2022 by Louis Strous
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.26.2 or,
@@ -73,6 +73,7 @@ use Scalar::Util qw(
   blessed
   looks_like_number
 );
+use Text::Glob qw(match_glob);
 use XML::Twig;
 use YAML::Any qw(
   Dump
@@ -83,9 +84,12 @@ use YAML::Any qw(
 # always use x.yyy version numbering, so that string comparison and
 # numeric comparison give the same ordering, to avoid trouble due to
 # different ways of interpreting version numbers.
-our $VERSION = '2.008';
+our $VERSION = '2.011';
 
 my $CASE_TOLERANT;
+my $PIRname; # for 'name' or 'iname' as appropriate for
+             # case-sensitiveness of the operating system
+my $PIRnotname;               # likewise for 'not_name' or 'not_iname'
 
 # capture and log warnings and errors, so they end up in the log file
 # as well as being printed to standard output
@@ -97,6 +101,8 @@ BEGIN {
     log_error( Carp::longmess( $_[0] ) ) unless $^S;
   };
   $CASE_TOLERANT = File::Spec->case_tolerant();
+  $PIRname = $CASE_TOLERANT? 'iname': 'name';
+  $PIRnotname = 'not_' . $PIRname;
 }
 
 my @gps_location_tags      = qw(GPSLatitude GPSLongitude GPSAltitude);
@@ -221,7 +227,7 @@ sub process {
   if ( not($done) or $self->option('removeourtags') ) {
     log_message("Seeking files.\n");
     @files = resolve_files( { recurse => $self->option('recurse') },
-      Path::Iterator::Rule->new->not_name('*_original')->file, @arguments );
+      Path::Iterator::Rule->new->$PIRnotname('*_original')->file, @arguments );
     log_message( 'Found ' . scalar(@files) . ' file(s).' . "\n" );
 
     $self->process_follow(@files)        # must happen before the first
@@ -415,8 +421,8 @@ sub camera_id {
 #   $camera_id = $ims->camera_id_from_fallback($fallback_camera_id);
 #
 # Returns the regular camera ID of a camera that has a fallback camera
-# ID equal to C<$fallback_camera_id>, or C<undef> if there is no such
-# camera.
+# ID equal to C<$fallback_camera_id>, or C<$fallback_camera_id> if
+# there is no such camera.
 sub camera_id_from_fallback {
   my ( $self, $fallback_camera_id ) = @_;
   my $r = $self->{fallback_to_camera_id}->{$fallback_camera_id};
@@ -425,7 +431,7 @@ sub camera_id_from_fallback {
       sort { ( $r->{$b} <=> $r->{$a} ) or ( $a cmp $b ) } keys %{$r};
     return $candidates[0];
   } else {
-    return;
+    return $fallback_camera_id;
   }
 }
 
@@ -571,7 +577,7 @@ sub deduce_camera_offset {
 sub delete_backups {
   my ( $self, @arguments ) = @_;
   my @files = resolve_files( { recurse => $self->option('recurse') },
-    Path::Iterator::Rule->new->name('*_original')->file, @arguments );
+    Path::Iterator::Rule->new->$PIRname('*_original')->file, @arguments );
 
   log_message( "Removing " . scalar(@files) . " backup file(s).\n" );
   my $progressbar;
@@ -743,6 +749,258 @@ sub get_from_targets {
     }
   }
   return;
+}
+
+# Compares $info and $new_info (which must be of type
+# Image::Synchronize::GroupedInfo) to determine which tags need to be
+# changed.
+#
+# $messages, if defined, is a reference to an array to which relevant
+# progress messages are appended.
+#
+# $changes, if defined, is a reference to a hash to which key-value
+# pairs are added in which the keys are the tags for which a change is
+# needed and the values are the amount of force that is needed for the
+# change.
+#
+# Returns 0 if no changes are needed.  If changes are needed, then
+# returns 1 plus the minimum amount of force that is needed for any of
+# the changes.
+sub get_changes {
+  my ($self, $file, $info, $new_info, $extra_info, $messages, $changes) = @_;
+
+  $messages //= [];
+  $changes //= {};
+
+  my $can_change = is_image_or_movie($info);
+
+  # In general, the file needs modification if FileModifyDate has
+  # changed or if the GPS location and timestamp are newly added
+  # or if the GPS location or timestamp have changed and
+  # TimeSource was set but not equal to 'GPS'.
+  #
+  # If the user specified --force or --force 1, then the file also
+  # needs modification if CameraID, DateTimeOriginal, or
+  # TimeSource have changed or are newly added.
+  #
+  # If the user specified --force 2, then the file also needs
+  # modification if the GPS location or timestamp have changed and
+  # TimeSource was not set or was equal to 'GPS'.
+
+  my $gps_location_tags_count;
+  my $min_force_for_change = 99;
+  if ($can_change) {
+    # not a metadata file
+    foreach my $tag (
+                     qw(
+                         CameraID
+                         DateTimeOriginal
+                         ImsyncVersion
+                         FileModifyDate
+                         GPSAltitude
+                         GPSLatitude
+                         GPSLongitude
+                         TimeSource
+                     )
+                   ) {
+      my $new    = $new_info->get($tag);
+      my $old    = $info->get($tag);
+      my $change = 1;
+
+      if ( (defined($gps_location_tags{$tag}))
+           and (defined($old) or defined($new)) ) {
+        ++$gps_location_tags_count;
+        next;                   # handle these separately
+      }
+
+      if ( defined $old ) {
+        if ( defined $new ) {
+          if ( $new ne $old ) {
+            push @{$messages}, " $tag has changed.";
+          } else {
+            $change = 0;
+          }
+        } else {                # old but not new
+          push @{$messages}, " $tag has disappeared,";
+        }
+      } elsif ( defined $new ) { # new but not old
+        push @{$messages}, " $tag is new.";
+      } else {                  # neither new nor old
+        $change = 0;
+      }
+      if ($change) {
+        state $force_1_tags = {
+                               map { $_ => 1 }
+                               qw(
+                                   CameraID
+                                   DateTimeOriginal
+                                   ImsyncVersion
+                                   TimeSource
+                               )
+                             };
+        if ( $tag eq 'FileModifyDate' ) {
+          $min_force_for_change = 0
+            if $min_force_for_change > 0;
+          $changes->{$tag} = 0;
+        } elsif ( exists $force_1_tags->{$tag} ) {
+          $min_force_for_change = 1
+            if $min_force_for_change > 1;
+          $changes->{$tag} = 1;
+        }
+      }
+    }
+  } else {
+    # a non-image file; cannot change any embedded tags, only file
+    # modification timestamp
+    my $tag = 'FileModifyDate';
+    my $new = $new_info->get($tag);
+    my $old = $info->get($tag);
+    my $change = 1;
+
+    if ( defined $old ) {
+      if ( defined $new ) {
+        if ( $new ne $old ) {
+          push @{$messages}, " $tag has changed.";
+        } else {
+          $change = 0;
+        }
+      } else {                # old but not new
+        push @{$messages}, " $tag has disappeared,";
+      }
+    } elsif ( defined $new ) { # new but not old
+      push @{$messages}, " $tag is new.";
+    } else {                  # neither new nor old
+      $change = 0;
+    }
+    if ($change) {
+      $min_force_for_change = 0
+        if $min_force_for_change > 0;
+      $changes->{$tag} = 0;
+    }
+  }
+
+  if ($gps_location_tags_count) {
+    # Some cameras, for example the LG-H870, can record a GPS altitude
+    # by itself, without a GPS latitude and longitude, when the camera
+    # doesn't know its location.  We treat those cases as if the GPS
+    # altitude wasn't there, but if the file gets modified anyway and
+    # get no new GPS position then we remove the troublesome and
+    # to us useless GPS altitude.
+    my $change        = 1;
+    my $old_pos_count = 0;
+    my @old_pos       = map {
+      my $v = $info->get($_);
+      ++$old_pos_count
+        if defined $v
+        and $_ ne 'GPSAltitude';
+      $v
+    } @gps_location_tags;
+    my $new_pos_count = 0;
+    my @new_pos       = map {
+      my $v = $new_info->get($_);
+      ++$new_pos_count
+        if defined $v
+        and $_ ne 'GPSAltitude';
+      $v
+    } @gps_location_tags;
+    my $distance = geo_distance( \@old_pos, \@new_pos );
+    if ( defined $distance ) {  # the GPS location was complete in old
+                                # and new
+      if ( $distance ) {
+        my ( $value, $prefix ) = si_prefix($distance);
+        push @{$messages}, " GPS position has changed by $value ${prefix}m.";
+        $extra_info->set( 'position_change', $distance );
+        if ( $distance > ( $self->{max_gps_distance} // 0 ) ) {
+          $self->{max_gps_distance} = $distance;
+          $self->{max_gps_file}     = $file;
+        }
+      }
+      else {
+        $change = 0;
+      }
+    }
+    elsif ( $old_pos_count == 2 ) {
+      push @{$messages}, " GPS position has disappeared,";
+      $new_info->delete($_) foreach ( @gps_location_tags, 'GPSDateTime' );
+    }
+    elsif ( $new_pos_count ) {
+      push @{$messages}, " GPS position is new.";
+    } elsif ($old_pos_count == 0) {
+      # no old location and no new location and yet we got here.  Must
+      # be the case where the file contains a solitary GPS altitude.
+      push @{$messages}, ' Solitary GPS altitude.';
+      $new_info->delete('GPSAltitude');
+    } else {
+      push @{$messages}, ' GPS position is incomplete.';
+      $new_info->delete($_) foreach ( @gps_location_tags, 'GPSDateTime' );
+    }
+    if ($change) {
+
+      # if the GPS position already existed and the TimeSource is
+      # absent or equal to GPS, then we assume the GPS information was
+      # embedded by a GPS device and should only be modified if the
+      # --force level is at least 2.  Otherwise we assume that the old
+      # GPS position (if any) was added by us in an earlier run; then
+      # we can already modify it even if no --force is specified.
+      if ( ( $info->get('TimeSource') // 'GPS' ) eq 'GPS' )
+      {
+        $min_force_for_change = 2
+          if $min_force_for_change > 2;
+        foreach my $tag (@gps_location_tags, 'GPSDateTime') {
+          $changes->{$tag} = 2
+          if stringify($info->get($tag)) ne stringify($new_info->get($tag));
+        }
+      }
+      else {
+        $min_force_for_change = 0
+          if $min_force_for_change > 0;
+        foreach my $tag (@gps_location_tags, 'GPSDateTime') {
+          $changes->{$tag} = 0
+            if stringify($info->get($tag)) ne stringify($new_info->get($tag));
+        }
+      }
+    }
+  }
+
+  push @{$messages}, $new_info->stringify(' ');
+
+  if (scalar(keys %{$changes}) == 1
+      and exists $changes->{ImsyncVersion}
+      and defined $info->get('ImsyncVersion')) {
+    # The only thing that changed is the ImsyncVersion value: the file
+    # already has that tag but the current version of imsync is newer
+    # than the one that modified the file last.  This is not a good
+    # reason to change the file, so we suppress that change.
+    %{$changes} = ();
+    $min_force_for_change = 99;
+    $new_info->set('ImsyncVersion', $info->get('ImsyncVersion'));
+    push @{$messages}, ' Only ImsyncVersion has changed -- suppressing.';
+  }
+
+  $extra_info->set( 'min_force_for_change', $min_force_for_change );
+
+  my $result = 0;
+  if ( $min_force_for_change < 99 ) {    # some changes
+    if ( ( $extra_info->get('explicit_change') // 0 ) > 0
+      or $self->option( 'force', 0 ) >= $min_force_for_change )
+    {
+      $extra_info->set( 'needs_modification', 1 );
+      push @{$messages}, ' Modification of this file is indicated.';
+      $extra_info->set( 'changes', [ sort keys %{$changes} ] )
+        if keys %{$changes};
+      $result = 1;
+    }
+    else {
+      push @{$messages}, ' Modification of this file is suppressed, needs --force'
+        . ( $min_force_for_change > 1 ? ' --force' : '' ) . '.';
+      $result = $min_force_for_change + 1;
+    }
+  }
+  else {
+    push @{$messages}, ' No changes.';
+  }
+
+  return $result;
 }
 
 # returns 0 if the file needs no modification, 1 if the file needs
@@ -1146,236 +1404,14 @@ sub determine_new_values_for_file {
     }
   }
 
-  # In general, the file needs modification if FileModifyDate has
-  # changed or if the GPS location and timestamp are newly added
-  # or if the GPS location or timestamp have changed and
-  # TimeSource was set but not equal to 'GPS'.
-  #
-  # If the user specified --force or --force 1, then the file also
-  # needs modification if CameraID, DateTimeOriginal, or
-  # TimeSource have changed or are newly added.
-  #
-  # If the user specified --force 2, then the file also needs
-  # modification if the GPS location or timestamp have changed and
-  # TimeSource was not set or was equal to 'GPS'.
-
-  my $gps_location_tags_count;
-  my $min_force_for_change = 99;
   my %changes;
-  if ($can_change) {
-    # not a metadata file
-    foreach my $tag (
-                     qw(
-                         CameraID
-                         DateTimeOriginal
-                         ImsyncVersion
-                         FileModifyDate
-                         GPSAltitude
-                         GPSLatitude
-                         GPSLongitude
-                         TimeSource
-                     )
-                   ) {
-      my $new    = $new_info->get($tag);
-      my $old    = $info->get($tag);
-      my $change = 1;
 
-      if ( (defined($gps_location_tags{$tag}))
-           and (defined($old) or defined($new)) ) {
-        ++$gps_location_tags_count;
-        next;                   # handle these separately
-      }
-
-      if ( defined $old ) {
-        if ( defined $new ) {
-          if ( $new ne $old ) {
-            push @messages, " $tag has changed.";
-          } else {
-            $change = 0;
-          }
-        } else {                # old but not new
-          push @messages, " $tag has disappeared,";
-        }
-      } elsif ( defined $new ) { # new but not old
-        push @messages, " $tag is new.";
-      } else {                  # neither new nor old
-        $change = 0;
-      }
-      if ($change) {
-        state $force_1_tags = {
-                               map { $_ => 1 }
-                               qw(
-                                   CameraID
-                                   DateTimeOriginal
-                                   ImsyncVersion
-                                   TimeSource
-                               )
-                             };
-        if ( $tag eq 'FileModifyDate' ) {
-          $min_force_for_change = 0
-            if $min_force_for_change > 0;
-          $changes{$tag} = 0;
-        } elsif ( exists $force_1_tags->{$tag} ) {
-          $min_force_for_change = 1
-            if $min_force_for_change > 1;
-          $changes{$tag} = 1;
-        }
-      }
-    }
-  } else {
-    # a non-image file; cannot change any embedded tags, only file
-    # modification timestamp
-    my $tag = 'FileModifyDate';
-    my $new = $new_info->get($tag);
-    my $old = $info->get($tag);
-    my $change = 1;
-
-    if ( defined $old ) {
-      if ( defined $new ) {
-        if ( $new ne $old ) {
-          push @messages, " $tag has changed.";
-        } else {
-          $change = 0;
-        }
-      } else {                # old but not new
-        push @messages, " $tag has disappeared,";
-      }
-    } elsif ( defined $new ) { # new but not old
-      push @messages, " $tag is new.";
-    } else {                  # neither new nor old
-      $change = 0;
-    }
-    if ($change) {
-      $min_force_for_change = 0
-        if $min_force_for_change > 0;
-      $changes{$tag} = 0;
-    }
-  }
-
-  if ($gps_location_tags_count) {
-    # Some cameras, for example the LG-H870, can record a GPS altitude
-    # by itself, without a GPS latitude and longitude, when the camera
-    # doesn't know its location.  We treat those cases as if the GPS
-    # altitude wasn't there, but if the file gets modified anyway and
-    # get no new GPS position then we remove the troublesome and
-    # to us useless GPS altitude.
-    my $change        = 1;
-    my $old_pos_count = 0;
-    my @old_pos       = map {
-      my $v = $info->get($_);
-      ++$old_pos_count
-        if defined $v
-        and $_ ne 'GPSAltitude';
-      $v
-    } @gps_location_tags;
-    my $new_pos_count = 0;
-    my @new_pos       = map {
-      my $v = $new_info->get($_);
-      ++$new_pos_count
-        if defined $v
-        and $_ ne 'GPSAltitude';
-      $v
-    } @gps_location_tags;
-    my $distance = geo_distance( \@old_pos, \@new_pos );
-    if ( defined $distance ) {  # the GPS location was complete in old
-                                # and new
-      if ( $distance ) {
-        my ( $value, $prefix ) = si_prefix($distance);
-        push @messages, " GPS position has changed by $value ${prefix}m.";
-        $extra_info->set( 'position_change', $distance );
-        if ( $distance > ( $self->{max_gps_distance} // 0 ) ) {
-          $self->{max_gps_distance} = $distance;
-          $self->{max_gps_file}     = $file;
-        }
-      }
-      else {
-        $change = 0;
-      }
-    }
-    elsif ( $old_pos_count == 2 ) {
-      push @messages, " GPS position has disappeared,";
-      $new_info->delete($_) foreach ( @gps_location_tags, 'GPSDateTime' );
-    }
-    elsif ( $new_pos_count ) {
-      push @messages, " GPS position is new.";
-    } elsif ($old_pos_count == 0) {
-      # no old location and no new location and yet we got here.  Must
-      # be the case where the file contains a solitary GPS altitude.
-      push @messages, ' Solitary GPS altitude.';
-      $new_info->delete('GPSAltitude');
-    } else {
-      push @messages, ' GPS position is incomplete.';
-      $new_info->delete($_) foreach ( @gps_location_tags, 'GPSDateTime' );
-    }
-    if ($change) {
-
-      # if the GPS position already existed and the TimeSource is
-      # absent or equal to GPS, then we assume the GPS information was
-      # embedded by a GPS device and should only be modified if the
-      # --force level is at least 2.  Otherwise we assume that the old
-      # GPS position (if any) was added by us in an earlier run; then
-      # we can already modify it even if no --force is specified.
-      if ( ( $info->get('TimeSource') // 'GPS' ) eq 'GPS' )
-      {
-        $min_force_for_change = 2
-          if $min_force_for_change > 2;
-        foreach my $tag (@gps_location_tags, 'GPSDateTime') {
-          $changes{$tag} = 2
-          if stringify($info->get($tag)) ne stringify($new_info->get($tag));
-        }
-      }
-      else {
-        $min_force_for_change = 0
-          if $min_force_for_change > 0;
-        foreach my $tag (@gps_location_tags, 'GPSDateTime') {
-          $changes{$tag} = 0
-            if stringify($info->get($tag)) ne stringify($new_info->get($tag));
-        }
-      }
-    }
-  }
+  my $result = $self->get_changes($file, $info, $new_info, $extra_info,
+                                  \@messages, \%changes);
 
   {
     my $camera_id = $new_info->get('CameraID');
     $self->{camera_ids}->{$camera_id} = 1 if defined $camera_id;
-  }
-
-  push @messages, $new_info->stringify(' ');
-
-  if (scalar(keys %changes) == 1
-      and exists $changes{ImsyncVersion}
-      and defined $info->get('ImsyncVersion')) {
-    # The only thing that changed is the ImsyncVersion value: the file
-    # already has that tag but the current version of imsync is newer
-    # than the one that modified the file last.  This is not a good
-    # reason to change the file, so we suppress that change.
-    %changes = ();
-    $min_force_for_change = 99;
-    $new_info->set('ImsyncVersion', $info->get('ImsyncVersion'));
-    push @messages, ' Only ImsyncVersion has changed -- suppressing.';
-  }
-
-  $extra_info->set( 'min_force_for_change', $min_force_for_change );
-
-  my $result = 0;
-  if ( $min_force_for_change < 99 ) {    # some changes
-    if ( ( $extra_info->get('explicit_change') // 0 ) > 0
-      or $self->option( 'force', 0 ) >= $min_force_for_change )
-    {
-      $extra_info->set( 'needs_modification', 1 );
-      push @messages, ' Modification of this file is indicated.';
-      $extra_info->set( 'changes', [ sort keys %changes ] )
-        if keys %changes;
-      $result = 1;
-    }
-    else {
-      push @messages, ' Modification of this file is suppressed, needs --force'
-        . ( $min_force_for_change > 1 ? ' --force' : '' ) . '.';
-      $result = $min_force_for_change + 1;
-    }
-  }
-  else {
-    push @messages, ' No changes.';
   }
 
   # if verbose & 4 then only print if needs_modification
@@ -2000,8 +2036,23 @@ sub has_useful_timestamp {
 # sensitive, except on case-insensitive operating systems.
 sub identify_files {
   my ( $pattern, @files ) = @_;
-  my $regex = end_glob_to_regex($pattern);
-  return grep /$regex/, @files;
+  my %original;
+  my @tfiles;
+  if ($CASE_TOLERANT) {
+    # lowercase the file names and pattern if the operating system
+    # uses case insensitive path names so the match becomes case
+    # insensitive.  Remember the original path names so we can return
+    # those (the matching ones) instead of the lowercased versions.
+    $pattern = lc $pattern;
+    @tfiles = map { lc =~ s|^\./||r } @files;
+  } else {
+    @tfiles = map { s|^\./||r } @files;
+  }
+  foreach my $i (0..$#files) {
+    $original{$tfiles[$i]} = $files[$i];
+  }
+  $pattern = '*' . $pattern unless $pattern =~ /^\*/;
+  return map { $original{$_} } match_glob($pattern, @tfiles);
 }
 
 #  $ims->import_camera_offsets;
@@ -2221,7 +2272,7 @@ EOD
         ++$count_gps_times if defined $info->{GPSDateTime};
       } else {
         my $type;
-        if ($info->get('MIMEType') =~ m'application/(json|yaml)') {
+        if (($info->get('MIMEType') // '') =~ m'application/(json|yaml)') {
           # the MIMEType is detected based on the file's contents,
           # regardless of its file name extension
           $type = uc($1);
@@ -2541,53 +2592,51 @@ sub modify_file {
             ;
         }
 
-        {
-          my %values_for_export;
-          foreach my $tag ($new_info->tags) {
-            foreach my $group ($new_info->groups($tag)) {
-              my $v = $new_info->get($group, $tag);
-              $values_for_export{$group? "$group:$tag": $tag} = "$v";
-            }
-          }
-          my $metafile = "${file}.yaml";
-          my $old_metainfo;
-          if (-r $metafile) {
-            $old_metainfo = LoadFile($metafile);
+        # write the tags to a metadata file instead, if any of the
+        # tags have changed relative to what is in the metadata file
+        # already
+        my $metafile = "${file}.yaml";
+        my $old_metainfo;
+        if (-r $metafile) {
+          $old_metainfo = get_image_info_from_metadata_file($metafile);
+        } else {
+          $old_metainfo = new Image::Synchronize::GroupedInfo;
+        }
+        my %changes;
+        $changed = $self->get_changes($file, $old_metainfo, $new_info, $extra_info,
+                                      undef, \%changes);
+        if ($changed) {
+          if (exists $changes{FileModifyDate}
+              and scalar keys %changes == 1) {
+            # only FileModifyDate needs to be changed
+            $self->set_file_modification_time($metafile,
+                                              $new_info->get('FileModifyDate')->time_utc);
+            $status = 4;
           } else {
-            $old_metainfo = {};
-          }
-          my $needs_write = 0;
-          foreach my $tag (%values_for_export) {
-            if (exists($old_metainfo->{$tag})
-                and $values_for_export{$tag} ne $old_metainfo->{$tag}) {
-              $needs_write = 1;
-              last;
+            # the contents of the metadata file needs changes
+            my %values_for_export;
+            foreach my $tag ($new_info->tags) {
+              foreach my $group ($new_info->groups($tag)) {
+                my $v = $new_info->get($group, $tag);
+                $values_for_export{$group? "$group:$tag": $tag} = "$v";
+              }
             }
-          }
-          if ($needs_write) {
-            my $ok = DumpFile($metafile, \%values_for_export);
-            if ($ok) {
+            if (DumpFile($metafile, \%values_for_export)) {
               push @messages, " Wrote metadata to '$metafile'.\n";
               $self->set_file_modification_time($metafile,
                                                 $new_info->get('FileModifyDate')->time_utc);
+              $status = 4;
             } else {
               push @messages, " Writing metadata to '${file}.yaml' failed: $@\n";
               $status = 5;
             }
-          } else {
-            $changed = 0; # no changes (perhaps excluding FileModifyDate) after all
           }
+        } else {
+          $changed = 0; # no changes (perhaps excluding FileModifyDate) after all
         }
-
-        # Probably the file is unchanged, but we don't know for sure.
-        foreach my $tag (@{$changes}) {
-          next if $tag eq 'FileModifyDate';
-          $new_info->delete($tag);
+        if (@messages) {
+          log_message(join("\n", @messages) . "\n");
         }
-
-        $status = 4;
-
-        log_warn(@messages) if @messages;
       }
     }
 
@@ -3706,7 +3755,7 @@ sub resolve_files {
       my @subdirs =
         Path::Iterator::Rule->new
           ->max_depth(1)
-          ->name( $f->basename )
+          ->$PIRname( $f->basename )
           ->directory
           ->all( $f->parent );
       @extra = $rule->all(@subdirs) if @subdirs;
@@ -3715,11 +3764,15 @@ sub resolve_files {
       push @extra,
         Path::Iterator::Rule->new
           ->max_depth(1)
-          ->name( $f->basename )
+          ->$PIRname( $f->basename )
           ->and( $rule )
           ->all( $f->parent );
 
       log_message("No matches for $item.\n") unless @extra;
+
+      # remove initial './' because it makes later pattern matching
+      # more difficult
+      @extra = map { s|^./||; $_ } @extra;
     }
     push @files, @extra;
   }
@@ -3736,7 +3789,7 @@ sub restore_original_files {
 
   # restore original files
   my @files = resolve_files( { recurse => $self->option('recurse') },
-    Path::Iterator::Rule->new->file->name('*_original'), @arguments );
+    Path::Iterator::Rule->new->file->$PIRname('*_original'), @arguments );
   my $progressbar = $self->setup_progressbar( scalar(@files), 'restore' );
   my $count       = 0;
   my $exit_status = 0;
