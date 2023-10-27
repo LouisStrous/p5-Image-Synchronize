@@ -29,13 +29,16 @@ Louis Strous, E<lt>imsync@quae.nl<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2018-2022 by Louis Strous
+Copyright (C) 2018-2023 by Louis Strous
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.26.2 or,
 at your option, any later version of Perl 5 you may have available.
 
 =cut
+
+use parent 'Exporter';
+our @EXPORT_OK = qw(normalize_options);
 
 use feature 'state';
 
@@ -79,10 +82,22 @@ use YAML::Any qw(
   LoadFile
 );
 
+BEGIN {
+  if ($^O eq 'MSWin32'
+      and (!$^V or $^V lt v5.33.5)
+      and eval 'require Win32::UTCFileTime')
+  {
+    import Win32::UTCFileTime;
+  }
+}
+
 # always use x.yyy version numbering, so that string comparison and
 # numeric comparison give the same ordering, to avoid trouble due to
 # different ways of interpreting version numbers.
-our $VERSION = '2.010';
+our $VERSION = '2.011';
+
+# TODO: check each folder for an .imsync-cameraoffsets.yaml file
+# TODO: allow timezone specification on --time
 
 my $CASE_TOLERANT;
 my $PIRname; # for 'name' or 'iname' as appropriate for
@@ -633,7 +648,8 @@ sub potential_donors {
   my ($self, $file, $info) = @_;
   my $number = $info->get('image_number');
   my @targets;
-  if ( defined( $self->{files_for_image_numbers}->{$number} ) ) {
+  if ( defined($number)
+       && defined( $self->{files_for_image_numbers}->{$number} ) ) {
     my $target;
     @targets = grep { $_ ne $file }
       @{ $self->{files_for_image_numbers}->{$number} };
@@ -1617,14 +1633,14 @@ sub exportgpx {
   foreach my $file ( sort keys %{ $self->{new_info} } ) {
     my $new_info = $self->{new_info}->{$file};
     next unless defined( my $longitude = $new_info->get('GPSLongitude') );
+    # get GPSDateTime, not FileModifyDate, because of GPS fix lag
+    next unless defined( my $time = $new_info->get('GPSDateTime') );
 
     ++$count;
 
     my $latitude = $new_info->get('GPSLatitude');
     my $altitude = $new_info->get('GPSAltitude');
-
-    # get GPSDateTime, not FileModifyDate, because of GPS fix lag
-    my $time = $new_info->get('GPSDateTime')->display_utc;
+    $time = $time->display_utc;
 
     $minlat = $latitude
       if not( defined $minlat )
@@ -1859,16 +1875,17 @@ sub get_image_info {
   my $info = new Image::Synchronize::GroupedInfo;
 
   {
-    my $image_info = $self->backend->ImageInfo(
-      $file,
-      @all_tags,
-      {
+    my $image_info = $self->backend->ImageInfo
+      (
+       $file,
+       @all_tags,
+       {
         PrintConv => 0,
         defined( $self->option('fastscan') )
         ? ( FastScan => $self->option('fastscan') )
         : (),
       }
-    );
+     );
 
     if ( ( $image_info->{MIMEType} // '' ) =~ m|^image/| ) {
       $info->set( 'file_type', 'image' );
@@ -2523,7 +2540,8 @@ my %convert_for_writing = (
 
 sub set_file_modification_time {
   my ($self, $file, $time_utc) = @_;
-  return $self->backend->SetFileTime($file, undef, $time_utc);
+  utime undef, $time_utc, $file;
+#  return $self->backend->SetFileTime($file, undef, $time_utc);
 }
 
 #   $et->modify_file($file);
@@ -2736,14 +2754,25 @@ sub modify_file {
       # whether Daylight Savings Time is in effect when this code is
       # executed).
       #
-      # Fortunately, the author of Image::ExifTool has faced the same
-      # problem, so we can use Image::ExifTool functionality to work
-      # around it.  We directly call the Image::ExifTool functionality
-      # that sets the file modification time.
+      # The author of Image::ExifTool faced and overcame the same
+      # problem, and using the resulting Image::ExifTool functionality
+      # worked for me on Windows 10 but no longer on Windows 11.
+      #
+      # Then I found Win32::UTCFileTime, which allows overriding utime
+      # with a version that hopefully works on Windows 11.
 
+      my $cur_mt = -M $file;
       my $fmt = $new_info->get('FileModifyDate');
       my $success = $self->set_file_modification_time($file, $fmt->time_utc);
 
+      if ($success) {
+        my $new_mt = -M $file;
+        if ($new_mt == $cur_mt) {
+          log_message( 4, { name => $file },
+                       sub { " Setting FileModifyDate of '$file' to '$fmt' FAILED\n" } );
+          $success = 0;
+        }
+      }
       if ($success) {
         log_message( 4, { name => $file },
                     sub { " Set FileModifyDate of '$file' to '$fmt'\n" } );
@@ -3088,6 +3117,7 @@ sub process_user_times {
                               $/x
       )
     {    # multi-unit offset
+      # TODO: support timezone offset
       $value = ( $+{year} // 0 ) * 365;
       $value = ( $value + ( $+{day} // 0 ) ) * 24;
       $value = ( $value + ( $+{hour} // 0 ) ) * 60;
@@ -3106,6 +3136,7 @@ sub process_user_times {
       }
     }
     elsif ( $rhs =~ /^(\d+:\d+(?::\d+)?)$/ ) {    # clock time
+      # TODO: support timezone offset
       my $createdate = $info->get('CreateDate');
       if ( defined $createdate ) {
         $value = Image::Synchronize::Timestamp->new( $rhs, $createdate );
@@ -4073,6 +4104,19 @@ sub file_from_dto {
   } else {
     return $dto_timestamp;
   }
+}
+
+sub normalize_options {
+  my @args;
+  foreach (@_) {
+    if (my ($prefix, $opt, $suffix) = /^(-+)([-_\w]+)(.*)/) {
+      $opt =~ tr/-_//d;
+      push @args, "$prefix$opt$suffix";
+    } else {
+      push @args, $_;
+    }
+  }
+  return @args;
 }
 
 1;

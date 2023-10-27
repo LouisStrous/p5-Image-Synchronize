@@ -1,5 +1,12 @@
 Revision history for Perl extension Image::Synchronize.
 
+2.011 2023-10-27
+
+      - Use Win32::UTCFileTime to modify file modification times on
+        Microsoft Windows, because the previous functionality turns
+        out not to always work correctly on Windows 11.
+      - Allow arbitrary - and _ in option names.
+
 2.010 2023-04-19
 
       - Suppress position changes of less than 1 cm, to avoid position
