@@ -29,7 +29,7 @@ Louis Strous, E<lt>imsync@quae.nl<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2018-2023 by Louis Strous
+Copyright (C) 2018-2024 by Louis Strous
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.26.2 or,
@@ -94,7 +94,7 @@ BEGIN {
 # always use x.yyy version numbering, so that string comparison and
 # numeric comparison give the same ordering, to avoid trouble due to
 # different ways of interpreting version numbers.
-our $VERSION = '2.011';
+our $VERSION = '2.012';
 
 # TODO: check each folder for an .imsync-cameraoffsets.yaml file
 # TODO: allow timezone specification on --time

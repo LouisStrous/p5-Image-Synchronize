@@ -956,7 +956,7 @@ sub parse_components_ {
                 )?              # minute is optional
                 (?:
                   :             # separator minute - second
-                  (?<second>\d+)
+                  (?<second>\d+(?:\.\d+)?) # second may have fractional part
                 )?              # second is optional
                 (?:             # start timezone
                   (?<tzutc>Z)   # Z means UTC
@@ -970,7 +970,7 @@ sub parse_components_ {
                     )?          # minute is optional
                     (?:
                       :           # separator timezone minute - second
-                      (?<tzsecond>\d+)
+                      (?<tzsecond>\d+(?:\.\d+)?)
                     )?          # second is optional
                   )             # end numeric timezone
                 )?              # end timezone, timezone is optional
