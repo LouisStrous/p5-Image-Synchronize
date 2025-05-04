@@ -871,6 +871,10 @@ is C<Brand|Model|SerialNumber|U>.
 At present, only Apple QuickTime movies fall into this category.  Use
 the L</--cameraid> option to assign different camera IDs when needed.
 
+NOTE: Before version 2.013, a supposedly-UTC image file's embedded
+creation time stamp was assumed to be given relative to UTC if it had
+no explicit time zone.  This assumption has been dropped.
+
 =head2 GPS Fix Lag
 
 An image recording device such as a smartphone that incorporates a GPS

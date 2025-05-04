@@ -29,7 +29,7 @@ Louis Strous, E<lt>imsync@quae.nl<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2018-2024 by Louis Strous
+Copyright (C) 2018-2025 by Louis Strous
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.26.2 or,
@@ -94,7 +94,7 @@ BEGIN {
 # always use x.yyy version numbering, so that string comparison and
 # numeric comparison give the same ordering, to avoid trouble due to
 # different ways of interpreting version numbers.
-our $VERSION = '2.012';
+our $VERSION = '2.013';
 
 # TODO: check each folder for an .imsync-cameraoffsets.yaml file
 # TODO: allow timezone specification on --time
@@ -1170,12 +1170,7 @@ sub determine_new_values_for_file {
   my $timesource_letter;    # letter to identify time source in report
 
   my $create_time = $new_info->get('CreateDate');
-  if (defined $create_time) {
-    if (not $create_time->has_timezone_offset
-        and $info->get('supposedly_utc')) {
-      $create_time->set_timezone_offset(0); # assume UTC
-    }
-  } else {
+  if (not defined $create_time) {
     ($create_time, my $donator) =
       $self->get_from_targets('CreateDate', $donator_files);
     if (defined $create_time) {
